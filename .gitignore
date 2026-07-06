@@ -1,0 +1,9 @@
+.env*
+!.env.example
+.next
+node_modules
+dist
+coverage
+.vercel
+supabase/.temp
+*.tsbuildinfo

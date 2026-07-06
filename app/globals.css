@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 40% 98%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --muted: 210 30% 94%;
+  --muted-foreground: 215 16% 42%;
+  --accent: 204 100% 95%;
+  --accent-foreground: 222 47% 11%;
+  --border: 214 32% 88%;
+  --input: 214 32% 88%;
+  --ring: 210 90% 54%;
+  --primary: 214 100% 52%;
+  --primary-foreground: 0 0% 100%;
+  --font-sf: "SF Pro Display";
+}
+
+.dark {
+  --background: 222 34% 7%;
+  --foreground: 210 40% 98%;
+  --card: 222 30% 10%;
+  --card-foreground: 210 40% 98%;
+  --muted: 222 24% 15%;
+  --muted-foreground: 215 18% 72%;
+  --accent: 212 54% 17%;
+  --accent-foreground: 210 40% 98%;
+  --border: 216 20% 22%;
+  --input: 216 20% 22%;
+  --ring: 204 100% 64%;
+  --primary: 204 100% 58%;
+  --primary-foreground: 222 47% 11%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-feature-settings: "ss01" on, "cv01" on, "cv11" on;
+  letter-spacing: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.glass {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0.38));
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(28px) saturate(150%);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
+}
+
+.dark .glass {
+  background: linear-gradient(135deg, rgba(24, 32, 46, 0.72), rgba(15, 23, 42, 0.42));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
