@@ -15,8 +15,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Sun,
-  Target,
-  WalletCards
+  Target
 } from "lucide-react";
 import { AIChatPanel } from "@/components/AIChatPanel";
 import { AIInsightCard } from "@/components/AIInsightCard";
@@ -112,8 +111,8 @@ export default function Home() {
       <div className="mx-auto min-h-screen w-full max-w-7xl overflow-x-hidden px-4 pb-28 pt-4 sm:px-6 lg:px-8">
         <header className="sticky top-3 z-30 mb-5 flex items-center justify-between gap-3 rounded-full border border-white/40 bg-white/60 px-3 py-2 shadow-sm backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/45">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-emerald-400 text-white shadow-glow">
-              <WalletCards className="h-5 w-5" />
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[1.05rem] bg-black shadow-glow ring-1 ring-white/35">
+              <img src="/icons/wallet-icon-192.png" alt="Wallet" className="h-full w-full object-cover" />
             </div>
             <div className="min-w-0">
               <h1 className="truncate text-lg font-black sm:text-xl">Wallet</h1>
