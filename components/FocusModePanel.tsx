@@ -43,7 +43,7 @@ export function FocusModePanel({
       <GlassCard>
         <h3 className="text-xl font-black">3 acciones recomendadas</h3>
         <div className="mt-3 grid gap-2">
-          {["Revisar comida de esta semana", "Reservar dinero para pagos", "Mover $20.000 a ahorro"].map((action) => (
+          {["Registrar el próximo gasto", "Crear presupuesto semanal", "Conectar una cuenta read-only"].map((action) => (
             <Button key={action} variant="glass" className="justify-start">
               <CheckCircle2 className="h-4 w-4" />
               {action}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarPlus, CreditCard, Plus, ReceiptText } from "lucide-react";
+import { CalendarPlus, CreditCard, Pencil, Plus, ReceiptText, Trash2 } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -152,6 +152,63 @@ export function DebtBudgetPlanner() {
     }
   }
 
+  async function editPlan(plan: ExpensePlan) {
+    const name = window.prompt("Nombre del gasto", plan.name);
+    if (!name) return;
+    const amountValue = window.prompt("Monto", String(plan.amount));
+    const amount = Number(amountValue);
+    if (!amount) return;
+
+    setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, name, amount } : item));
+
+    if (supabase && session && !plan.id.startsWith("local-")) {
+      const { error } = await supabase.from("expense_plans").update({ name, amount }).eq("id", plan.id);
+      setMessage(error ? error.message : "Gasto actualizado.");
+    }
+  }
+
+  async function deletePlan(plan: ExpensePlan) {
+    if (!window.confirm(`¿Borrar ${plan.name}?`)) return;
+
+    setPlans((current) => current.filter((item) => item.id !== plan.id));
+
+    if (supabase && session && !plan.id.startsWith("local-")) {
+      const { error } = await supabase.from("expense_plans").delete().eq("id", plan.id);
+      setMessage(error ? error.message : "Gasto borrado.");
+    }
+  }
+
+  async function editDebt(debt: DebtRow) {
+    const personName = window.prompt("Persona o entidad", debt.person_name);
+    if (!personName) return;
+    const amountValue = window.prompt("Monto total", String(debt.amount));
+    const amount = Number(amountValue);
+    if (!amount) return;
+    const paidValue = window.prompt("Monto pagado", String(debt.paid_amount));
+    const paidAmount = Number(paidValue || 0);
+
+    setDebts((current) => current.map((item) => item.id === debt.id ? { ...item, person_name: personName, amount, paid_amount: paidAmount } : item));
+
+    if (supabase && session && !debt.id.startsWith("local-")) {
+      const { error } = await supabase
+        .from("debts")
+        .update({ person_name: personName, amount, paid_amount: paidAmount })
+        .eq("id", debt.id);
+      setMessage(error ? error.message : "Deuda actualizada.");
+    }
+  }
+
+  async function deleteDebt(debt: DebtRow) {
+    if (!window.confirm(`¿Borrar deuda de ${debt.person_name}?`)) return;
+
+    setDebts((current) => current.filter((item) => item.id !== debt.id));
+
+    if (supabase && session && !debt.id.startsWith("local-")) {
+      const { error } = await supabase.from("debts").delete().eq("id", debt.id);
+      setMessage(error ? error.message : "Deuda borrada.");
+    }
+  }
+
   const totalsByPeriod = plans.reduce<Record<string, number>>((acc, plan) => {
     acc[plan.period] = (acc[plan.period] ?? 0) + plan.amount;
     return acc;
@@ -193,7 +250,15 @@ export function DebtBudgetPlanner() {
                 <p className="truncate font-black">{plan.name}</p>
                 <p className="text-xs text-muted-foreground">{periodLabels[plan.period]} · {plan.category}</p>
               </div>
-              <p className="shrink-0 text-lg font-black">{formatCurrency(plan.amount)}</p>
+              <div className="flex shrink-0 items-center gap-2">
+                <p className="text-lg font-black">{formatCurrency(plan.amount)}</p>
+                <Button variant="glass" size="icon" onClick={() => editPlan(plan)} aria-label="Editar gasto">
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button variant="glass" size="icon" onClick={() => deletePlan(plan)} aria-label="Borrar gasto">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           ))}
         </div>
@@ -230,7 +295,15 @@ export function DebtBudgetPlanner() {
               </div>
               <div className="mt-2 flex items-center justify-between gap-3">
                 <p className="text-sm text-muted-foreground">{debt.due_date ? `Vence ${new Date(debt.due_date).toLocaleDateString("es-CL")}` : "Sin fecha"}</p>
-                <p className="text-lg font-black">{formatCurrency(debt.amount - debt.paid_amount)}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-lg font-black">{formatCurrency(debt.amount - debt.paid_amount)}</p>
+                  <Button variant="glass" size="icon" onClick={() => editDebt(debt)} aria-label="Editar deuda">
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button variant="glass" size="icon" onClick={() => deleteDebt(debt)} aria-label="Borrar deuda">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </div>
           ))}

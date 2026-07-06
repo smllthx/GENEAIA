@@ -8,7 +8,7 @@ export async function getCurrentUser() {
   const supabase = createClient();
 
   if (!supabase) {
-    return { user: null, mode: "demo" as const };
+    return { user: null, mode: "unconfigured" as const };
   }
 
   const { data } = await supabase.auth.getUser();
@@ -19,14 +19,28 @@ export async function signInWithEmail(email: string) {
   const supabase = createClient();
 
   if (!supabase) {
-    return { ok: false, mode: "demo" as const };
+    return { ok: false, mode: "unconfigured" as const };
   }
 
   const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: {
-      emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/` : undefined
-    }
+    options: { shouldCreateUser: true }
+  });
+
+  return { ok: !error, error };
+}
+
+export async function verifyEmailCode(email: string, token: string) {
+  const supabase = createClient();
+
+  if (!supabase) {
+    return { ok: false, mode: "unconfigured" as const };
+  }
+
+  const { error } = await supabase.auth.verifyOtp({
+    email,
+    token,
+    type: "email"
   });
 
   return { ok: !error, error };
@@ -36,7 +50,7 @@ export async function signOut() {
   const supabase = createClient();
 
   if (!supabase) {
-    return { ok: true, mode: "demo" as const };
+    return { ok: true, mode: "unconfigured" as const };
   }
 
   const { error } = await supabase.auth.signOut();

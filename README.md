@@ -1,6 +1,6 @@
 # Wallet
 
-Web app full-stack de control financiero personal con estética Apple Wallet, datos demo, Supabase, OpenAI API y arquitectura bancaria preparada para providers read-only.
+Web app full-stack de control financiero personal con estética Apple Wallet, cuenta obligatoria, Supabase, OpenAI API y arquitectura bancaria preparada para providers read-only.
 
 ## Stack
 
@@ -56,17 +56,17 @@ NEXT_PUBLIC_FINTOC_PUBLIC_KEY=
 BANK_TOKEN_ENCRYPTION_KEY=
 ```
 
-La app funciona en modo demo sin Supabase configurado. Si `OPENAI_API_KEY` no existe o falla, `Wallet Assistant` responde con fallback mock.
+La app requiere Supabase para crear cuentas. Si `OPENAI_API_KEY` no existe o falla, `Wallet Assistant` responde con un fallback sin inventar datos financieros.
 
 ## Modo real con bancos
 
 Wallet ya incluye un panel de **Banca real y sincronización**. El flujo real es:
 
 1. Configura Supabase y ejecuta `lib/supabase/schema.sql`.
-2. Activa Supabase Auth con magic links. Opcionalmente activa Google/Apple SSO y Passkeys para FaceID/WebAuthn.
+2. Activa Supabase Auth con email OTP. Opcionalmente activa Google/Apple SSO y Passkeys para FaceID/WebAuthn.
 3. Configura `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 4. Configura `BANK_TOKEN_ENCRYPTION_KEY` con un valor secreto largo.
-5. Entra a la app con email, SSO o passkey.
+5. Entra a la app con correo + codigo, SSO o passkey.
 6. Para conectar sin clave de API de proveedor propia, abre SimpleFIN Bridge desde la app, autoriza el banco y pega el setup token.
 7. Para Chile con proveedor nativo, configura `FINTOC_API_KEY` y pega el `link_token` de cada conexión.
 8. Usa “Actualizar bancos” para traer saldos y movimientos. El saldo total se refresca en tiempo real cuando Supabase recibe cambios.
@@ -75,16 +75,66 @@ Cada banco conectado queda como una fila independiente en `bank_connections`, po
 
 La app no guarda claves bancarias ni permite transferencias. Solo lee saldos y movimientos.
 
-## Cuenta, FaceID y SSO
+## Banco sandbox de prueba
+
+Para probar el linkeo bancario sin credenciales reales, usa:
+
+```txt
+Usuario: wallet_test
+Clave: read-only-2026
+```
+
+Estas credenciales son solo de Wallet Sandbox Bank. Crean cuentas, movimientos y saldos de prueba dentro de Supabase para validar dashboard, IA y sincronización. No son credenciales bancarias reales.
+
+No se deben pedir ni guardar claves reales de bancos. Para bancos reales usa Fintoc, SimpleFIN u otro proveedor read-only/OAuth.
+
+## Edicion y borrado
+
+Wallet permite editar y borrar:
+
+- cuentas
+- saldos manuales
+- movimientos
+- categorias
+- notas
+
+Al borrar una cuenta tambien se eliminan sus movimientos asociados por la relacion de base de datos.
+
+## Cuenta, codigo por correo/SMS, FaceID y SSO
 
 Wallet soporta:
 
-- email magic link
+- email OTP con codigo de 6 digitos
+- SMS OTP para celulares chilenos si Supabase Phone Auth esta activo con Twilio
 - Google SSO
 - Apple SSO
 - passkeys/WebAuthn para FaceID, TouchID, PIN o llave física
 
 Las passkeys requieren activar la opción en Supabase Auth y configurar el dominio de producción como origen permitido.
+
+Para que Supabase envie codigo y no magic link, pega la plantilla:
+
+```txt
+supabase/email-templates/wallet-otp.html
+```
+
+en:
+
+```txt
+Authentication > Email Templates > Magic Link
+```
+
+La plantilla usa `{{ .Token }}`. No uses `{{ .ConfirmationURL }}` si quieres codigo.
+
+Tambien configura:
+
+```txt
+Authentication > URL Configuration
+Site URL: https://wallet-finance-ai.vercel.app
+Redirect URLs: https://wallet-finance-ai.vercel.app/**
+```
+
+Para SMS Chile, activa Phone Auth en Supabase y configura Twilio como proveedor SMS. La app acepta `+56912345678`, `912345678` o `09...` y normaliza a formato internacional `+56`.
 
 ## Presupuestos, gastos y deudas
 

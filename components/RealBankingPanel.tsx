@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { getSiteUrl } from "@/lib/site-url";
 import type { Account, Transaction } from "@/lib/types";
 import { GlassCard } from "@/components/GlassCard";
 import { Badge } from "@/components/ui/badge";
@@ -219,7 +220,10 @@ export function RealBankingPanel({
       .on("postgres_changes", { event: "*", schema: "public", table: "bank_connections" }, reload)
       .subscribe();
 
+    window.addEventListener("wallet-data-changed", reload);
+
     return () => {
+      window.removeEventListener("wallet-data-changed", reload);
       void supabase.removeChannel(channel);
     };
   }, [loadConnections, loadLiveData, session, supabase]);
@@ -230,17 +234,17 @@ export function RealBankingPanel({
     setLoading(true);
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: window.location.origin }
+      options: { shouldCreateUser: true }
     });
     setLoading(false);
-    setMessage(error ? error.message : "Te envié un link mágico al email. Ábrelo para activar tu cuenta.");
+    setMessage(error ? error.message : "Te envié un código al correo. Escríbelo en la pantalla inicial para entrar.");
   }
 
   async function signInWithOAuth(provider: "google" | "apple") {
     if (!supabase) return;
     await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: window.location.origin }
+      options: { redirectTo: getSiteUrl() }
     });
   }
 
@@ -409,7 +413,7 @@ export function RealBankingPanel({
 
       {!supabase && (
         <p className="mt-4 rounded-2xl bg-yellow-400/20 p-3 text-sm font-semibold">
-          Configura Supabase para crear cuentas y salir del modo demo.
+          Configura Supabase para crear cuentas.
         </p>
       )}
 

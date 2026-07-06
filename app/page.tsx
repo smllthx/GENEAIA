@@ -22,8 +22,6 @@ import { AIInsightCard } from "@/components/AIInsightCard";
 import { AccountCard } from "@/components/AccountCard";
 import { AppleHealthMetricCard } from "@/components/AppleHealthMetricCard";
 import { BalanceCard } from "@/components/BalanceCard";
-import { BudgetRing } from "@/components/BudgetRing";
-import { DebtCard, GoalCard, SubscriptionCard } from "@/components/Cards";
 import { CategoryDonut, TrendLineChart } from "@/components/Charts";
 import { FloatingTabBar } from "@/components/FloatingTabBar";
 import { FocusModePanel } from "@/components/FocusModePanel";
@@ -32,42 +30,21 @@ import { HeatmapSpending } from "@/components/HeatmapSpending";
 import { InstallPWAButton } from "@/components/InstallPWAButton";
 import { LiquidBackground } from "@/components/LiquidBackground";
 import { MonthlyVisualSummary as MonthlyVisualSummaryGrid } from "@/components/MonthlyVisualSummary";
-import { AddTransactionModal, AppleWalletImportModal, ConnectBankModal } from "@/components/Modals";
+import { AddTransactionModal, AppleWalletImportModal, ConnectBankModal, ManualAccountModal } from "@/components/Modals";
 import { PrivacyToggle } from "@/components/PrivacyToggle";
 import { RealBankingPanel } from "@/components/RealBankingPanel";
 import { TodayCard as TodaySummaryCard } from "@/components/TodayCard";
 import { DebtBudgetPlanner } from "@/components/DebtBudgetPlanner";
+import { AuthGate } from "@/components/AuthGate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import {
-  balanceTrend,
-  categoryData,
-  demoAccounts,
-  demoBudgets,
-  demoDebts,
-  demoGoals,
-  demoInsights,
-  demoSubscriptions,
-  demoTransactions,
-  heatmapDays,
-  totals
-} from "@/lib/demo-data";
 import { formatCurrency } from "@/lib/utils";
 import { TransactionItem } from "@/components/TransactionItem";
-import type { Account, Transaction } from "@/lib/types";
+import type { Account, BalancePoint, CategoryPoint, HeatmapDay, Transaction } from "@/lib/types";
 
-const healthCards = [
-  { label: "Tu ritmo de gasto", value: "18% alto", icon: Gauge, color: "text-orange-500", copy: "Reduce compras chicas" },
-  { label: "Promedio diario", value: "$21.900", icon: Flame, color: "text-red-500", copy: "Meta: $18.000" },
-  { label: "Saldo proyectado", value: "$918k", icon: Sparkles, color: "text-sky-500", copy: "Fin de mes" },
-  { label: "Categoría dominante", value: "Comida", icon: CreditCard, color: "text-amber-500", copy: "28% arriba" },
-  { label: "Gasto impulsivo detectado", value: "$38.990", icon: Shield, color: "text-pink-500", copy: "Compras online" },
-  { label: "Días críticos", value: "3", icon: CalendarDays, color: "text-violet-500", copy: "Pagos cerca" },
-  { label: "Racha de ahorro", value: "12 días", icon: CheckCircle2, color: "text-emerald-500", copy: "Vas bien" },
-  { label: "Meta más cercana", value: "Carlino", icon: Target, color: "text-orange-500", copy: "43% listo" }
-];
+const categoryColors = ["#0A84FF", "#34C759", "#FF9F0A", "#FF375F", "#AF52DE", "#64D2FF", "#FFD60A", "#8E8E93"];
 
 const secondaryItems = [
   "Cuentas",
@@ -77,6 +54,84 @@ const secondaryItems = [
   "Apple Wallet",
   "Seguridad"
 ];
+
+function buildCategoryData(transactions: Transaction[]): CategoryPoint[] {
+  const totalsByCategory = transactions
+    .filter((transaction) => transaction.amount < 0)
+    .reduce<Record<string, number>>((acc, transaction) => {
+      const category = transaction.category || "Otros";
+      acc[category] = (acc[category] ?? 0) + Math.abs(transaction.amount);
+      return acc;
+    }, {});
+
+  return Object.entries(totalsByCategory)
+    .sort(([, a], [, b]) => b - a)
+    .map(([name, value], index) => ({
+      name,
+      value,
+      color: categoryColors[index % categoryColors.length]
+    }));
+}
+
+function buildBalanceTrend(transactions: Transaction[], currentBalance: number): BalancePoint[] {
+  const sorted = [...transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  if (sorted.length < 2) return [];
+
+  const totalMovement = sorted.reduce((sum, transaction) => sum + transaction.amount, 0);
+  let runningBalance = currentBalance - totalMovement;
+
+  return sorted.slice(-30).map((transaction) => {
+    runningBalance += transaction.amount;
+    return {
+      day: new Date(transaction.date).toLocaleDateString("es-CL", { day: "2-digit" }),
+      balance: Math.round(runningBalance),
+      projected: Math.round(runningBalance)
+    };
+  });
+}
+
+function buildHeatmap(transactions: Transaction[]): HeatmapDay[] {
+  const today = new Date();
+  const days = Array.from({ length: 35 }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (34 - index));
+    const key = date.toISOString().slice(0, 10);
+    return { date: key, amount: 0, level: 0 as HeatmapDay["level"] };
+  });
+
+  const byDate = transactions
+    .filter((transaction) => transaction.amount < 0)
+    .reduce<Record<string, number>>((acc, transaction) => {
+      const key = transaction.date.slice(0, 10);
+      acc[key] = (acc[key] ?? 0) + Math.abs(transaction.amount);
+      return acc;
+    }, {});
+
+  const max = Math.max(1, ...Object.values(byDate));
+  return days.map((day) => {
+    const amount = byDate[day.date] ?? 0;
+    const ratio = amount / max;
+    const level = amount === 0 ? 0 : ratio < 0.25 ? 1 : ratio < 0.5 ? 2 : ratio < 0.75 ? 3 : 4;
+    return { ...day, amount, level };
+  });
+}
+
+const emptyInsight = {
+  id: "empty-insight",
+  user_id: "current-user",
+  title: "Faltan datos",
+  message: "Agrega una cuenta y registra movimientos para generar alertas reales.",
+  severity: "blue" as const,
+  type: "alerta" as const,
+  urgency: 1,
+  action: "Conecta un banco o agrega efectivo.",
+  action_label: "Agregar datos",
+  quick_button: "Agregar cuenta",
+  previous_month_delta: 0,
+  estimated_impact: 0,
+  icon: "🔒",
+  created_at: new Date().toISOString()
+};
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState("inicio");
@@ -89,8 +144,8 @@ export default function Home() {
   const [liveTransactions, setLiveTransactions] = useState<Transaction[]>([]);
   const [liveMode, setLiveMode] = useState(false);
 
-  const activeAccounts = liveMode && liveAccounts.length > 0 ? liveAccounts : demoAccounts;
-  const activeTransactions = liveMode && liveTransactions.length > 0 ? liveTransactions : demoTransactions;
+  const activeAccounts = liveAccounts;
+  const activeTransactions = liveTransactions;
   const activeBalance = activeAccounts
     .filter((account) => !account.is_hidden && !account.exclude_from_total)
     .reduce((sum, account) => sum + account.balance, 0);
@@ -99,15 +154,27 @@ export default function Home() {
     .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
 
   const accountsById = useMemo(() => Object.fromEntries(activeAccounts.map((account) => [account.id, account])), [activeAccounts]);
-  const monthlyProgress = Math.round((activeMonthlySpent / totals.monthlyBudget) * 100);
+  const today = new Date();
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const daysLeft = Math.max(1, daysInMonth - today.getDate() + 1);
+  const availableToday = activeBalance > 0 ? Math.floor(activeBalance / daysLeft) : 0;
+  const availableWeek = activeBalance > 0 ? Math.floor(activeBalance / 4) : 0;
+  const savedThisMonth = activeAccounts
+    .filter((account) => account.type === "savings")
+    .reduce((sum, account) => sum + account.balance, 0);
+  const categoryChart = useMemo(() => buildCategoryData(activeTransactions), [activeTransactions]);
+  const balanceChart = useMemo(() => buildBalanceTrend(activeTransactions, activeBalance), [activeTransactions, activeBalance]);
+  const heatmap = useMemo(() => buildHeatmap(activeTransactions), [activeTransactions]);
+  const monthlyProgress = 0;
   const filteredTransactions = activeTransactions.filter((transaction) =>
     [transaction.merchant, transaction.category, transaction.description].join(" ").toLowerCase().includes(query.toLowerCase())
   );
-  const urgentInsight = [...demoInsights].sort((a, b) => b.urgency - a.urgency)[0];
+  const urgentInsight = emptyInsight;
 
   return (
     <main className={darkMode ? "dark" : ""}>
       <LiquidBackground focusMode={focusMode} />
+      <AuthGate>
       <div className="mx-auto min-h-screen w-full max-w-7xl overflow-x-hidden px-4 pb-28 pt-4 sm:px-6 lg:px-8">
         <header className="sticky top-3 z-30 mb-5 flex items-center justify-between gap-3 rounded-full border border-white/40 bg-white/60 px-3 py-2 shadow-sm backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/45">
           <div className="flex min-w-0 items-center gap-3">
@@ -142,7 +209,7 @@ export default function Home() {
           <GlassCard className="p-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge>Bienvenido</Badge>
-              <Badge>{liveMode ? "Modo real activo" : "Modo demo disponible"}</Badge>
+              <Badge>{liveMode ? "Modo real activo" : "Sin datos de ejemplo"}</Badge>
               <Badge>Moneda principal: CLP</Badge>
               <Badge>OAuth read-only preparado</Badge>
               <Badge>PWA instalable</Badge>
@@ -160,8 +227,8 @@ export default function Home() {
           </GlassCard>
           <div className="flex flex-wrap gap-2">
             <ConnectBankModal />
-            <Button variant="glass"><Plus className="h-4 w-4" />Agregar cuenta manual</Button>
-            <Button variant="glass"><Plus className="h-4 w-4" />Agregar efectivo</Button>
+            <ManualAccountModal />
+            <ManualAccountModal cash />
             <AddTransactionModal />
             <AppleWalletImportModal />
           </div>
@@ -171,8 +238,8 @@ export default function Home() {
           <FocusModePanel
             hidden={hidden}
             totalBalance={activeBalance}
-            availableToday={totals.availableToday}
-            subscriptions={demoSubscriptions}
+            availableToday={availableToday}
+            subscriptions={[]}
             urgentInsight={urgentInsight}
           />
         ) : (
@@ -195,6 +262,11 @@ export default function Home() {
                 transactions={activeTransactions}
                 totalBalance={activeBalance}
                 monthlySpent={activeMonthlySpent}
+                availableToday={availableToday}
+                availableWeek={availableWeek}
+                savedThisMonth={savedThisMonth}
+                categoryChart={categoryChart}
+                balanceChart={balanceChart}
                 liveMode={liveMode}
               />
             )}
@@ -209,11 +281,12 @@ export default function Home() {
             )}
             {activeTab === "presupuesto" && <Budgets monthlyProgress={monthlyProgress} />}
             {activeTab === "ahorros" && <Savings />}
-            {activeTab === "ia" && <AISection />}
+            {activeTab === "ia" && <AISection transactions={activeTransactions} monthlySpent={activeMonthlySpent} totalBalance={activeBalance} categoryChart={categoryChart} heatmap={heatmap} />}
           </>
         )}
       </div>
       <FloatingTabBar active={activeTab} onChange={setActiveTab} />
+      </AuthGate>
     </main>
   );
 }
@@ -228,6 +301,11 @@ function Dashboard({
   transactions,
   totalBalance,
   monthlySpent,
+  availableToday,
+  availableWeek,
+  savedThisMonth,
+  categoryChart,
+  balanceChart,
   liveMode
 }: {
   hidden: boolean;
@@ -239,32 +317,41 @@ function Dashboard({
   transactions: Transaction[];
   totalBalance: number;
   monthlySpent: number;
+  availableToday: number;
+  availableWeek: number;
+  savedThisMonth: number;
+  categoryChart: CategoryPoint[];
+  balanceChart: BalancePoint[];
   liveMode: boolean;
 }) {
   return (
     <div className="grid min-w-0 gap-5 lg:grid-cols-[1.05fr_0.95fr]">
       <div className="min-w-0 space-y-5">
         <BalanceCard balance={totalBalance} hidden={hidden} onToggleHidden={onToggleHidden} />
-        <TodaySummaryCard availableToday={totals.availableToday} hidden={hidden} />
+        <TodaySummaryCard availableToday={availableToday} hidden={hidden} />
         <GlassCard>
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-muted-foreground">Cuentas</p>
               <h2 className="text-2xl font-black">Saldo por institución</h2>
             </div>
-            <Badge>{liveMode ? "Datos reales" : "Demo"} · {accounts.length} activas</Badge>
+            <Badge>{accounts.length > 0 ? "Datos reales" : "Sin cuentas"} · {accounts.length} activas</Badge>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {accounts.map((account) => (
-              <AccountCard key={account.id} account={account} hidden={hidden} />
-            ))}
-          </div>
+          {accounts.length > 0 ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {accounts.map((account) => (
+                <AccountCard key={account.id} account={account} hidden={hidden} />
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="Agrega tu primera cuenta" copy="Conecta un banco, agrega efectivo o crea una cuenta manual para empezar." />
+          )}
         </GlassCard>
         <GlassCard>
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-muted-foreground">Smart Insights</p>
-              <h2 className="text-2xl font-black">Ordenados por prioridad</h2>
+                <p className="text-sm font-semibold text-muted-foreground">Smart Insights</p>
+                <h2 className="text-2xl font-black">Acciones importantes</h2>
             </div>
             <Button variant="glass" size="sm" onClick={onToggleSections}>
               <SlidersHorizontal className="h-4 w-4" />
@@ -272,12 +359,11 @@ function Dashboard({
             </Button>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            {demoInsights
-              .sort((a, b) => b.urgency - a.urgency)
-              .slice(0, hideSections ? 2 : 5)
-              .map((insight) => (
-                <AIInsightCard key={insight.id} insight={insight} />
-              ))}
+            {transactions.length > 0 ? (
+              <EmptyState title="Insights en preparación" copy="Wallet usará tus movimientos reales para generar alertas, sin datos inventados." />
+            ) : (
+              <EmptyState title="Sin insights todavía" copy="Registra movimientos o conecta un banco para activar alertas inteligentes." />
+            )}
           </div>
         </GlassCard>
         <GlassCard>
@@ -289,19 +375,31 @@ function Dashboard({
             <Badge>IA activa</Badge>
           </div>
           <div className="space-y-2">
-            {transactions.slice(0, 7).map((transaction) => (
-              <TransactionItem
-                key={transaction.id}
-                transaction={transaction}
-                account={accounts.find((account) => account.id === transaction.account_id)}
-                hidden={hidden}
-              />
-            ))}
+            {transactions.length > 0 ? (
+              transactions.slice(0, 7).map((transaction) => (
+                <TransactionItem
+                  key={transaction.id}
+                  transaction={transaction}
+                  account={accounts.find((account) => account.id === transaction.account_id)}
+                  hidden={hidden}
+                />
+              ))
+            ) : (
+              <EmptyState title="Sin movimientos" copy="Registra un pago o sincroniza un banco para ver tu timeline." />
+            )}
           </div>
         </GlassCard>
       </div>
       <aside className="min-w-0 space-y-5">
-        <MonthVisualSummary monthlyProgress={monthlyProgress} hidden={hidden} monthlySpent={monthlySpent} liveMode={liveMode} />
+        <MonthVisualSummary
+          monthlyProgress={monthlyProgress}
+          hidden={hidden}
+          monthlySpent={monthlySpent}
+          availableWeek={availableWeek}
+          savedThisMonth={savedThisMonth}
+          categoryChart={categoryChart}
+          liveMode={liveMode}
+        />
         <GlassCard>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-xl font-black">Presupuesto mensual</h2>
@@ -309,24 +407,30 @@ function Dashboard({
           </div>
           <Progress value={monthlyProgress} />
           <p className="mt-3 text-sm text-muted-foreground">
-            Te quedan {formatCurrency(totals.monthlyBudget - totals.monthlySpent)} para cerrar el mes.
+            Define un presupuesto mensual para calcular cuánto queda por gastar.
           </p>
         </GlassCard>
         <GlassCard>
           <h2 className="text-xl font-black">Tendencia de saldo</h2>
-          <TrendLineChart data={balanceTrend} />
+          {balanceChart.length > 1 ? <TrendLineChart data={balanceChart} /> : <EmptyState title="Sin tendencia" copy="Necesitas más movimientos para calcular una tendencia." />}
         </GlassCard>
         <GlassCard>
           <h2 className="text-xl font-black">Categorías</h2>
-          <CategoryDonut data={categoryData} />
-          <div className="grid grid-cols-2 gap-2">
-            {categoryData.map((category) => (
-              <div key={category.name} className="flex items-center gap-2 text-sm">
-                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: category.color }} />
-                <span className="truncate">{category.name}</span>
+          {categoryChart.length > 0 ? (
+            <>
+              <CategoryDonut data={categoryChart} />
+              <div className="grid grid-cols-2 gap-2">
+                {categoryChart.map((category) => (
+                  <div key={category.name} className="flex items-center gap-2 text-sm">
+                    <span className="h-3 w-3 rounded-full" style={{ backgroundColor: category.color }} />
+                    <span className="truncate">{category.name}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          ) : (
+            <EmptyState title="Sin categorías" copy="Registra gastos para ver porcentajes por categoría." />
+          )}
         </GlassCard>
         <GlassCard>
           <h2 className="text-xl font-black">Semáforo financiero</h2>
@@ -366,22 +470,29 @@ function MonthVisualSummary({
   monthlyProgress,
   hidden,
   monthlySpent,
+  availableWeek,
+  savedThisMonth,
+  categoryChart,
   liveMode
 }: {
   monthlyProgress: number;
   hidden: boolean;
   monthlySpent: number;
+  availableWeek: number;
+  savedThisMonth: number;
+  categoryChart: CategoryPoint[];
   liveMode: boolean;
 }) {
+  const topCategory = categoryChart[0]?.name ?? "Sin datos";
   const cards: Array<[string, string, string]> = [
     ["Gasto del mes", hidden ? "••••" : formatCurrency(monthlySpent), "💸"],
-    ["Presupuesto usado", `${monthlyProgress}%`, "🟡"],
-    ["Categoría cara", "Comida", "🍽️"],
-    ["Mejor mejora", "+$22.000 ahorro", "🌱"],
-    ["Mayor alerta", "3 pagos", "📅"],
-    ["Modo", liveMode ? "Real" : "Demo", "🏦"],
-    ["Disponible", hidden ? "••••" : formatCurrency(totals.availableWeek), "🧭"],
-    ["Ahorrado", hidden ? "••••" : formatCurrency(totals.savedThisMonth), "✅"]
+    ["Presupuesto usado", monthlyProgress > 0 ? `${monthlyProgress}%` : "Sin presupuesto", "🟡"],
+    ["Categoría cara", topCategory, "🍽️"],
+    ["Mejor mejora", "Calculando", "🌱"],
+    ["Mayor alerta", categoryChart.length > 0 ? "Revisar gastos" : "Sin alertas", "📅"],
+    ["Modo", liveMode ? "Real" : "Sin banco", "🏦"],
+    ["Disponible", hidden ? "••••" : formatCurrency(availableWeek), "🧭"],
+    ["Ahorrado", hidden ? "••••" : formatCurrency(savedThisMonth), "✅"]
   ];
   return (
     <GlassCard>
@@ -401,8 +512,8 @@ function Movements({
   hidden: boolean;
   query: string;
   setQuery: (query: string) => void;
-  filteredTransactions: typeof demoTransactions;
-  accountsById: Record<string, (typeof demoAccounts)[number]>;
+  filteredTransactions: Transaction[];
+  accountsById: Record<string, Account>;
 }) {
   return (
     <div className="grid gap-5 lg:grid-cols-[0.75fr_1.25fr]">
@@ -428,9 +539,13 @@ function Movements({
           <AddTransactionModal />
         </div>
         <div className="space-y-2">
-          {filteredTransactions.map((transaction) => (
-            <TransactionItem key={transaction.id} transaction={transaction} account={accountsById[transaction.account_id]} hidden={hidden} />
-          ))}
+          {filteredTransactions.length > 0 ? (
+            filteredTransactions.map((transaction) => (
+              <TransactionItem key={transaction.id} transaction={transaction} account={accountsById[transaction.account_id]} hidden={hidden} />
+            ))
+          ) : (
+            <EmptyState title="No hay movimientos" copy="Agrega una cuenta y registra tu primer gasto." />
+          )}
         </div>
       </GlassCard>
     </div>
@@ -446,22 +561,20 @@ function Budgets({ monthlyProgress }: { monthlyProgress: number }) {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-muted-foreground">Presupuestos</p>
-              <h2 className="text-2xl font-black">Control por categoría</h2>
+            <h2 className="text-2xl font-black">Control por categoría</h2>
             </div>
             <Button><Plus className="h-4 w-4" />Crear</Button>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {demoBudgets.map((budget) => (
-              <BudgetRing key={budget.id} budget={budget} />
-            ))}
-          </div>
+          <EmptyState title="Sin presupuestos por categoría" copy="Usa el formulario superior para crear gastos diarios, semanales, mensuales, anuales o por evento." />
+        </div>
         </GlassCard>
         <GlassCard glow>
-          <h2 className="text-2xl font-black">Recomendación IA</h2>
-          <p className="mt-3 text-lg font-semibold">
-            Tu presupuesto de comida es {formatCurrency(180000)}. Ya usaste {formatCurrency(121000)}.
-          </p>
-          <p className="mt-2 text-sm text-muted-foreground">Te quedan {formatCurrency(39000)} para 9 días.</p>
+        <h2 className="text-2xl font-black">Recomendación IA</h2>
+        <p className="mt-3 text-lg font-semibold">
+          Crea gastos por periodo y registra movimientos para recibir recomendaciones reales.
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">Wallet no muestra recomendaciones inventadas sin tus datos.</p>
           <div className="mt-5 rounded-[1.4rem] bg-orange-400/14 p-4">
             <p className="font-black">Zona de atención</p>
             <p className="text-sm text-muted-foreground">Si pasas el 80%, activa límite diario automático.</p>
@@ -484,32 +597,21 @@ function Savings() {
           </div>
           <Button><Target className="h-4 w-4" />Meta</Button>
         </div>
-        <div className="mt-4 rounded-[1.4rem] bg-gradient-to-r from-emerald-400/20 via-sky-400/15 to-yellow-300/20 p-4">
-          <p className="text-2xl">🎉</p>
-          <p className="mt-2 font-black">Confetti suave</p>
-          <p className="text-sm text-muted-foreground">La meta Carlino subió a 43%. Buen avance sin saturar la pantalla.</p>
-        </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {demoGoals.map((goal) => (
-            <GoalCard key={goal.id} goal={goal} />
-          ))}
+          <EmptyState title="Sin metas todavía" copy="Pronto podrás crear metas de ahorro desde aquí. Por ahora usa presupuestos y deudas." />
         </div>
       </GlassCard>
       <div className="space-y-5">
         <GlassCard>
           <h2 className="text-xl font-black">Pagos futuros y suscripciones</h2>
           <div className="mt-4 space-y-2">
-            {demoSubscriptions.slice(0, 6).map((subscription) => (
-              <SubscriptionCard key={subscription.id} subscription={subscription} />
-            ))}
+            <EmptyState title="Sin suscripciones" copy="Cuando sincronices movimientos, Wallet detectará pagos recurrentes." />
           </div>
         </GlassCard>
         <GlassCard>
           <h2 className="text-xl font-black">Deudas y deudores</h2>
           <div className="mt-4 space-y-3">
-            {demoDebts.map((debt) => (
-              <DebtCard key={debt.id} debt={debt} />
-            ))}
+            <EmptyState title="Tus deudas aparecen en Presupuesto" copy="Usa la pestaña Presupuesto para crear o editar deudas y deudores." />
           </div>
         </GlassCard>
       </div>
@@ -517,7 +619,43 @@ function Savings() {
   );
 }
 
-function AISection() {
+function EmptyState({ title, copy }: { title: string; copy: string }) {
+  return (
+    <div className="rounded-[1.4rem] bg-white/55 p-4 text-sm dark:bg-white/8">
+      <p className="font-black">{title}</p>
+      <p className="mt-1 text-muted-foreground">{copy}</p>
+    </div>
+  );
+}
+
+function AISection({
+  transactions,
+  monthlySpent,
+  totalBalance,
+  categoryChart,
+  heatmap
+}: {
+  transactions: Transaction[];
+  monthlySpent: number;
+  totalBalance: number;
+  categoryChart: CategoryPoint[];
+  heatmap: HeatmapDay[];
+}) {
+  const expenseTransactions = transactions.filter((transaction) => transaction.amount < 0);
+  const averageDaily = expenseTransactions.length > 0 ? Math.round(monthlySpent / Math.max(1, new Date().getDate())) : 0;
+  const largestExpense = expenseTransactions.reduce((max, transaction) => Math.max(max, Math.abs(transaction.amount)), 0);
+  const topCategory = categoryChart[0]?.name ?? "Sin datos";
+  const healthCards = [
+    { label: "Tu ritmo de gasto", value: transactions.length > 0 ? `${transactions.length} mov.` : "Sin datos", icon: Gauge, color: "text-orange-500", copy: transactions.length > 0 ? "Con datos reales" : "Agrega movimientos" },
+    { label: "Promedio diario", value: formatCurrency(averageDaily), icon: Flame, color: "text-red-500", copy: expenseTransactions.length > 0 ? "Gasto real" : "Sin gastos" },
+    { label: "Saldo proyectado", value: formatCurrency(totalBalance), icon: Sparkles, color: "text-sky-500", copy: "Según saldo actual" },
+    { label: "Categoría dominante", value: topCategory, icon: CreditCard, color: "text-amber-500", copy: categoryChart.length > 0 ? "Mayor gasto" : "Sin categorías" },
+    { label: "Gasto impulsivo detectado", value: formatCurrency(largestExpense), icon: Shield, color: "text-pink-500", copy: largestExpense > 0 ? "Mayor movimiento" : "Sin datos" },
+    { label: "Días críticos", value: "0", icon: CalendarDays, color: "text-violet-500", copy: "Sin pagos cargados" },
+    { label: "Racha de ahorro", value: totalBalance > 0 ? "Activa" : "Sin datos", icon: CheckCircle2, color: "text-emerald-500", copy: "Según saldo" },
+    { label: "Meta más cercana", value: "Sin meta", icon: Target, color: "text-orange-500", copy: "Crea una meta" }
+  ];
+
   return (
     <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
       <AIChatPanel />
@@ -534,7 +672,7 @@ function AISection() {
         </GlassCard>
         <GlassCard>
           <h2 className="text-xl font-black">Mapa de calor de gastos</h2>
-          <HeatmapSpending days={heatmapDays} />
+          {expenseTransactions.length > 0 ? <HeatmapSpending days={heatmap} /> : <EmptyState title="Sin mapa todavía" copy="Registra gastos para ver los días de mayor actividad." />}
         </GlassCard>
       </div>
     </div>

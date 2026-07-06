@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Send } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { GlassCard } from "@/components/GlassCard";
@@ -16,30 +17,89 @@ type AIAnswer = {
 };
 
 const initialAnswer: AIAnswer = {
-  diagnosis: "Vas algo justo este mes.",
-  key_points: ["Comida subió $31.000.", "Uber subió $18.500.", "Tienes 2 pagos próximos."],
-  action: "Limita comida fuera a $8.000 diarios por 7 días.",
-  estimated_amount: 31000,
-  urgency: "atención"
+  diagnosis: "Pregúntame algo sobre tus datos.",
+  key_points: ["Uso tus cuentas reales.", "Reviso tus movimientos.", "No invento montos si faltan datos."],
+  action: "Conecta un banco o registra movimientos para mejorar el cálculo.",
+  estimated_amount: 0,
+  urgency: "información"
 };
 
 export function AIChatPanel() {
+  const supabase = useMemo(() => createClient(), []);
   const [question, setQuestion] = useState("¿Cuánto puedo gastar esta semana?");
   const [answer, setAnswer] = useState<AIAnswer>(initialAnswer);
   const [loading, setLoading] = useState(false);
+  const [source, setSource] = useState("local");
+
+  async function buildContext() {
+    if (!supabase) return null;
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const userId = sessionData.session?.user.id;
+
+    if (!userId) return null;
+
+    const [profile, accounts, transactions, budgets, debts, subscriptions] = await Promise.all([
+      supabase.from("users").select("*").eq("id", userId).maybeSingle(),
+      supabase.from("accounts").select("*").order("created_at", { ascending: false }),
+      supabase.from("transactions").select("*").order("date", { ascending: false }).limit(180),
+      supabase.from("budgets").select("*").order("created_at", { ascending: false }),
+      supabase.from("debts").select("*").order("created_at", { ascending: false }),
+      supabase.from("subscriptions").select("*").order("created_at", { ascending: false })
+    ]);
+
+    const accountRows = accounts.data ?? [];
+    const transactionRows = transactions.data ?? [];
+    const spending = transactionRows
+      .filter((transaction) => Number(transaction.amount) < 0)
+      .reduce((sum, transaction) => sum + Math.abs(Number(transaction.amount)), 0);
+    const income = transactionRows
+      .filter((transaction) => Number(transaction.amount) > 0)
+      .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+    const balance = accountRows
+      .filter((account) => !account.is_hidden && !account.exclude_from_total)
+      .reduce((sum, account) => sum + Number(account.balance ?? 0), 0);
+    const byCategory = transactionRows.reduce<Record<string, number>>((acc, transaction) => {
+      const amount = Number(transaction.amount);
+      if (amount < 0) {
+        acc[transaction.category] = (acc[transaction.category] ?? 0) + Math.abs(amount);
+      }
+      return acc;
+    }, {});
+
+    return {
+      profile: profile.data,
+      summary: {
+        balance,
+        spending,
+        income,
+        transaction_count: transactionRows.length,
+        account_count: accountRows.length,
+        by_category: byCategory
+      },
+      accounts: accountRows,
+      transactions: transactionRows.slice(0, 60),
+      budgets: budgets.data ?? [],
+      debts: debts.data ?? [],
+      subscriptions: subscriptions.data ?? []
+    };
+  }
 
   async function ask() {
     setLoading(true);
     try {
+      const context = await buildContext();
       const response = await fetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question })
+        body: JSON.stringify({ question, context })
       });
       const data = await response.json();
       setAnswer(data.answer);
+      setSource(data.source ?? "local");
     } catch {
       setAnswer(initialAnswer);
+      setSource("local");
     } finally {
       setLoading(false);
     }
@@ -68,7 +128,7 @@ export function AIChatPanel() {
           Acción: {answer.action}
         </div>
         <p className="mt-3 text-sm text-muted-foreground">
-          Impacto estimado: {formatCurrency(answer.estimated_amount)} · urgencia {answer.urgency}
+          Impacto estimado: {formatCurrency(answer.estimated_amount)} · urgencia {answer.urgency} · fuente {source}
         </p>
       </div>
     </GlassCard>
