@@ -31,70 +31,18 @@ export function AIChatPanel() {
   const [loading, setLoading] = useState(false);
   const [source, setSource] = useState("local");
 
-  async function buildContext() {
-    if (!supabase) return null;
-
-    const { data: sessionData } = await supabase.auth.getSession();
-    const userId = sessionData.session?.user.id;
-
-    if (!userId) return null;
-
-    const [profile, accounts, transactions, budgets, debts, subscriptions] = await Promise.all([
-      supabase.from("users").select("*").eq("id", userId).maybeSingle(),
-      supabase.from("accounts").select("*").order("created_at", { ascending: false }),
-      supabase.from("transactions").select("*").order("date", { ascending: false }).limit(180),
-      supabase.from("budgets").select("*").order("created_at", { ascending: false }),
-      supabase.from("debts").select("*").order("created_at", { ascending: false }),
-      supabase.from("subscriptions").select("*").order("created_at", { ascending: false })
-    ]);
-
-    const accountRows = accounts.data ?? [];
-    const transactionRows = transactions.data ?? [];
-    const spending = transactionRows
-      .filter((transaction) => Number(transaction.amount) < 0)
-      .reduce((sum, transaction) => sum + Math.abs(Number(transaction.amount)), 0);
-    const income = transactionRows
-      .filter((transaction) => Number(transaction.amount) > 0)
-      .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
-    const balance = accountRows
-      .filter((account) => !account.is_hidden && !account.exclude_from_total)
-      .reduce((sum, account) => sum + Number(account.balance ?? 0), 0);
-    const byCategory = transactionRows.reduce<Record<string, number>>((acc, transaction) => {
-      const amount = Number(transaction.amount);
-      if (amount < 0) {
-        acc[transaction.category] = (acc[transaction.category] ?? 0) + Math.abs(amount);
-      }
-      return acc;
-    }, {});
-
-    return {
-      profile: profile.data,
-      summary: {
-        balance,
-        spending,
-        income,
-        transaction_count: transactionRows.length,
-        account_count: accountRows.length,
-        by_category: byCategory
-      },
-      accounts: accountRows,
-      transactions: transactionRows.slice(0, 60),
-      budgets: budgets.data ?? [],
-      debts: debts.data ?? [],
-      subscriptions: subscriptions.data ?? []
-    };
-  }
-
   async function ask() {
     setLoading(true);
     try {
-      const context = await buildContext();
+      const session = supabase ? (await supabase.auth.getSession()).data.session : null;
+      if (!session) throw new Error("auth_required");
       const response = await fetch("/api/ai", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, context })
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ question })
       });
       const data = await response.json();
+      if (!response.ok || !data.answer) throw new Error(data.error ?? "ai_failed");
       setAnswer(data.answer);
       setSource(data.source ?? "local");
     } catch {

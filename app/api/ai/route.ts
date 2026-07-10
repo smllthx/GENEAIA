@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { getSupabaseForRequest, getUserFromRequest } from "@/lib/supabase/server";
 
 const fallbackAnswer = {
   diagnosis: "Todavía necesito tus datos reales.",
@@ -116,12 +117,42 @@ function formatNumber(value: number) {
 }
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => ({ question: "", context: null }));
+  const { user, error } = await getUserFromRequest(request);
+  if (!user) return NextResponse.json({ error }, { status: 401 });
+  const supabase = getSupabaseForRequest(request);
+  if (!supabase) return NextResponse.json({ error: "supabase_not_configured" }, { status: 500 });
+  const body = await request.json().catch(() => ({ question: "" }));
   const question = typeof body.question === "string" ? body.question : "";
-  const context = body.context && typeof body.context === "object" ? body.context : null;
+  const [profile, accounts, transactions, budgets, debts, subscriptions] = await Promise.all([
+    supabase.from("users").select("*").eq("id", user.id).maybeSingle(),
+    supabase.from("accounts").select("*").order("created_at", { ascending: false }),
+    supabase.from("transactions").select("*").order("date", { ascending: false }).limit(180),
+    supabase.from("budgets").select("*").order("created_at", { ascending: false }),
+    supabase.from("debts").select("*").order("created_at", { ascending: false }),
+    supabase.from("subscriptions").select("*").order("created_at", { ascending: false })
+  ]);
+  const accountRows = accounts.data ?? [];
+  const transactionRows = transactions.data ?? [];
+  const spending = transactionRows.filter((transaction) => Number(transaction.amount) < 0).reduce((sum, transaction) => sum + Math.abs(Number(transaction.amount)), 0);
+  const income = transactionRows.filter((transaction) => Number(transaction.amount) > 0).reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+  const balance = accountRows.filter((account) => !account.is_hidden && !account.exclude_from_total).reduce((sum, account) => sum + Number(account.balance ?? 0), 0);
+  const byCategory = transactionRows.reduce<Record<string, number>>((acc, transaction) => {
+    const amount = Number(transaction.amount);
+    if (amount < 0) acc[transaction.category] = (acc[transaction.category] ?? 0) + Math.abs(amount);
+    return acc;
+  }, {});
+  const context = {
+    profile: profile.data,
+    summary: { balance, spending, income, transaction_count: transactionRows.length, account_count: accountRows.length, by_category: byCategory },
+    accounts: accountRows,
+    transactions: transactionRows.slice(0, 60),
+    budgets: budgets.data ?? [],
+    debts: debts.data ?? [],
+    subscriptions: subscriptions.data ?? []
+  };
 
-  if (!process.env.OPENAI_API_KEY || !context) {
-    return NextResponse.json({ source: context ? "local-calculation" : "fallback", answer: localFinancialAnswer(question, context as WalletContext | null) });
+  if (!process.env.OPENAI_API_KEY) {
+    return NextResponse.json({ source: "local-calculation", answer: localFinancialAnswer(question, context as WalletContext) });
   }
 
   try {

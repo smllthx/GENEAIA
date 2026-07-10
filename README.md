@@ -13,6 +13,7 @@ Web app full-stack de control financiero personal con estética Apple Wallet, cu
 - OpenAI API con fallback mock
 - Providers bancarios preparados: SimpleFIN Bridge, Fintoc, Plaid, GoCardless, SaltEdge, TrueLayer y Tink
 - PWA instalable
+- Service worker para instalacion y recursos estaticos
 - Vercel-ready
 
 ## Desarrollo local
@@ -54,6 +55,9 @@ TINK_CLIENT_SECRET=
 FINTOC_API_KEY=
 NEXT_PUBLIC_FINTOC_PUBLIC_KEY=
 BANK_TOKEN_ENCRYPTION_KEY=
+INBOUND_EMAIL_DOMAIN=
+INBOUND_EMAIL_PROVIDER=
+INBOUND_EMAIL_WEBHOOK_SECRET=
 ```
 
 La app requiere Supabase para crear cuentas. Si `OPENAI_API_KEY` no existe o falla, `Wallet Assistant` responde con un fallback sin inventar datos financieros.
@@ -177,3 +181,21 @@ Como web app no puede sincronizar Apple Wallet de forma completa como una app na
 - registro rápido
 - compatibilidad futura con Shortcuts
 - PWA instalable en iPhone
+
+## Automatizacion por correo y cartolas
+
+La seccion **Automatizar** permite:
+
+- crear un alias privado por usuario
+- iniciar la comprobacion del reenvio
+- subir cartolas PDF de hasta 10 MB
+- validar MIME, hash y acciones PDF peligrosas
+- extraer filas y conservar pagina/confianza
+- importar movimientos provisionales
+- detectar candidatos duplicados y conciliar por puntuacion
+
+Las cartolas se guardan en un bucket privado de Supabase con politicas por usuario. La migracion es `supabase/migrations/20260710180000_wallet_automation.sql`.
+
+La recepcion real de correo requiere un dominio inbound y un proveedor externo. Configura `INBOUND_EMAIL_DOMAIN`, `INBOUND_EMAIL_PROVIDER`, `INBOUND_EMAIL_WEBHOOK_SECRET` y `SUPABASE_SERVICE_ROLE_KEY` en Vercel. El proveedor debe enviar el webhook firmado a `/api/inbound-email/webhook` usando HMAC SHA-256 en `x-wallet-signature`.
+
+Wallet no solicita contrasenas bancarias ni acceso completo al correo.

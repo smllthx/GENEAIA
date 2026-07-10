@@ -42,17 +42,18 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { formatCurrency } from "@/lib/utils";
 import { TransactionItem } from "@/components/TransactionItem";
+import { AutomationPanel } from "@/components/AutomationPanel";
 import type { Account, BalancePoint, CategoryPoint, HeatmapDay, Transaction } from "@/lib/types";
 
 const categoryColors = ["#0A84FF", "#34C759", "#FF9F0A", "#FF375F", "#AF52DE", "#64D2FF", "#FFD60A", "#8E8E93"];
 
 const secondaryItems = [
-  "Cuentas",
-  "Deudas",
-  "Suscripciones",
-  "Ajustes",
-  "Apple Wallet",
-  "Seguridad"
+  { label: "Cuentas", tab: "inicio" },
+  { label: "Deudas", tab: "presupuesto" },
+  { label: "Suscripciones", tab: "presupuesto" },
+  { label: "Ajustes", tab: "inicio" },
+  { label: "Cartolas", tab: "automatizacion" },
+  { label: "Seguridad", tab: "automatizacion" }
 ];
 
 function buildCategoryData(transactions: Transaction[]): CategoryPoint[] {
@@ -268,6 +269,7 @@ export default function Home() {
                 categoryChart={categoryChart}
                 balanceChart={balanceChart}
                 liveMode={liveMode}
+                onNavigate={setActiveTab}
               />
             )}
             {activeTab === "movimientos" && (
@@ -280,7 +282,7 @@ export default function Home() {
               />
             )}
             {activeTab === "presupuesto" && <Budgets monthlyProgress={monthlyProgress} />}
-            {activeTab === "ahorros" && <Savings />}
+            {activeTab === "automatizacion" && <AutomationPanel accounts={activeAccounts} />}
             {activeTab === "ia" && <AISection transactions={activeTransactions} monthlySpent={activeMonthlySpent} totalBalance={activeBalance} categoryChart={categoryChart} heatmap={heatmap} />}
           </>
         )}
@@ -306,7 +308,8 @@ function Dashboard({
   savedThisMonth,
   categoryChart,
   balanceChart,
-  liveMode
+  liveMode,
+  onNavigate
 }: {
   hidden: boolean;
   onToggleHidden: () => void;
@@ -323,6 +326,7 @@ function Dashboard({
   categoryChart: CategoryPoint[];
   balanceChart: BalancePoint[];
   liveMode: boolean;
+  onNavigate: (tab: string) => void;
 }) {
   return (
     <div className="grid min-w-0 gap-5 lg:grid-cols-[1.05fr_0.95fr]">
@@ -454,8 +458,8 @@ function Dashboard({
           <h2 className="text-xl font-black">Menú secundario</h2>
           <div className="mt-4 grid grid-cols-2 gap-2">
             {secondaryItems.map((item) => (
-              <Button key={item} variant="glass" className="justify-between">
-                {item}
+              <Button key={item.label} variant="glass" className="justify-between" onClick={() => onNavigate(item.tab)}>
+                {item.label}
                 <ChevronRight className="h-4 w-4" />
               </Button>
             ))}
@@ -515,6 +519,16 @@ function Movements({
   filteredTransactions: Transaction[];
   accountsById: Record<string, Account>;
 }) {
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [accountFilter, setAccountFilter] = useState("");
+  const [reviewFilter, setReviewFilter] = useState("all");
+  const categories = Array.from(new Set(filteredTransactions.map((transaction) => transaction.category))).sort();
+  const visibleTransactions = filteredTransactions.filter((transaction) =>
+    (!categoryFilter || transaction.category === categoryFilter) &&
+    (!accountFilter || transaction.account_id === accountFilter) &&
+    (reviewFilter === "all" || (reviewFilter === "reviewed" ? transaction.reviewed : !transaction.reviewed))
+  );
+
   return (
     <div className="grid gap-5 lg:grid-cols-[0.75fr_1.25fr]">
       <GlassCard className="space-y-4">
@@ -523,12 +537,33 @@ function Movements({
           <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input className="pl-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar comercio, categoría o nota" />
         </div>
-        {["Fecha", "Cuenta", "Categoría", "Monto", "Recurrente", "Revisado"].map((filter) => (
-          <Button key={filter} className="w-full justify-between" variant="glass">
-            {filter}
-            <ChevronRight className="h-4 w-4" />
+        <label className="space-y-1 text-xs font-semibold text-muted-foreground">
+          Cuenta
+          <select className="h-11 w-full rounded-full border border-white/40 bg-white/60 px-4 text-sm text-foreground dark:bg-slate-900/80" value={accountFilter} onChange={(event) => setAccountFilter(event.target.value)}>
+            <option value="">Todas</option>
+            {Object.values(accountsById).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+          </select>
+        </label>
+        <label className="space-y-1 text-xs font-semibold text-muted-foreground">
+          Categoría
+          <select className="h-11 w-full rounded-full border border-white/40 bg-white/60 px-4 text-sm text-foreground dark:bg-slate-900/80" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+            <option value="">Todas</option>
+            {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+          </select>
+        </label>
+        <label className="space-y-1 text-xs font-semibold text-muted-foreground">
+          Estado
+          <select className="h-11 w-full rounded-full border border-white/40 bg-white/60 px-4 text-sm text-foreground dark:bg-slate-900/80" value={reviewFilter} onChange={(event) => setReviewFilter(event.target.value)}>
+            <option value="all">Todos</option>
+            <option value="pending">Por revisar</option>
+            <option value="reviewed">Revisados</option>
+          </select>
+        </label>
+        {(categoryFilter || accountFilter || reviewFilter !== "all") && (
+          <Button variant="glass" className="w-full" onClick={() => { setCategoryFilter(""); setAccountFilter(""); setReviewFilter("all"); }}>
+            Limpiar filtros
           </Button>
-        ))}
+        )}
       </GlassCard>
       <GlassCard>
         <div className="mb-4 flex items-center justify-between gap-3">
@@ -539,8 +574,8 @@ function Movements({
           <AddTransactionModal />
         </div>
         <div className="space-y-2">
-          {filteredTransactions.length > 0 ? (
-            filteredTransactions.map((transaction) => (
+          {visibleTransactions.length > 0 ? (
+            visibleTransactions.map((transaction) => (
               <TransactionItem key={transaction.id} transaction={transaction} account={accountsById[transaction.account_id]} hidden={hidden} />
             ))
           ) : (
@@ -563,7 +598,7 @@ function Budgets({ monthlyProgress }: { monthlyProgress: number }) {
               <p className="text-sm font-semibold text-muted-foreground">Presupuestos</p>
             <h2 className="text-2xl font-black">Control por categoría</h2>
             </div>
-            <Button><Plus className="h-4 w-4" />Crear</Button>
+            <Badge>Configurable por periodo</Badge>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <EmptyState title="Sin presupuestos por categoría" copy="Usa el formulario superior para crear gastos diarios, semanales, mensuales, anuales o por evento." />
