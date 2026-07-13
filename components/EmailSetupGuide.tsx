@@ -110,6 +110,10 @@ export function EmailSetupGuide({
         <div className="mt-6">
           <Send className="h-9 w-9 text-violet-500" />
           <h3 className="mt-4 text-xl font-black">Activa el reenvio en {providers.find((item) => item.id === provider)?.label}</h3>
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-sky-500/10 p-4">
+            <span className="min-w-0 truncate font-black">{alias.address}</span>
+            <Button variant="glass" size="icon" aria-label="Copiar alias" onClick={() => navigator.clipboard.writeText(alias.address)}><Copy className="h-4 w-4" /></Button>
+          </div>
           <div className="mt-4 space-y-2">
             {instructions[provider].map((instruction, index) => <div key={instruction} className="flex gap-3 rounded-2xl bg-white/55 p-3 text-sm dark:bg-white/8"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-foreground text-xs font-black text-background">{index + 1}</span><span className="pt-1 font-semibold">{instruction}</span></div>)}
           </div>
