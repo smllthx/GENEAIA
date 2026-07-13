@@ -133,7 +133,26 @@ export function AuthGate({ children }: { children: ReactNode }) {
       };
 
       setProfile(nextProfile);
-      setProfileReady(isProfileComplete(nextProfile));
+      const complete = isProfileComplete(nextProfile);
+      if (complete) {
+        const { count } = await supabase!.from("accounts").select("id", { count: "exact", head: true }).eq("user_id", session!.user.id);
+        if (!count) {
+          await supabase!.from("accounts").insert({
+            user_id: session!.user.id,
+            name: "Cuenta principal",
+            institution: nextProfile.main_bank,
+            type: "checking",
+            balance: 0,
+            currency: nextProfile.currency,
+            color: "from-sky-500 to-blue-700",
+            icon: "bank",
+            is_manual: true,
+            is_hidden: false,
+            exclude_from_total: false
+          });
+        }
+      }
+      setProfileReady(complete);
     }
 
     void loadProfile();
@@ -244,6 +263,27 @@ export function AuthGate({ children }: { children: ReactNode }) {
     if (error) {
       setMessage(error.message);
       return;
+    }
+
+    const { count } = await supabase.from("accounts").select("id", { count: "exact", head: true }).eq("user_id", session.user.id);
+    if (!count) {
+      const { error: accountError } = await supabase.from("accounts").insert({
+        user_id: session.user.id,
+        name: "Cuenta principal",
+        institution: profile.main_bank,
+        type: "checking",
+        balance: 0,
+        currency: profile.currency.toUpperCase(),
+        color: "from-sky-500 to-blue-700",
+        icon: "bank",
+        is_manual: true,
+        is_hidden: false,
+        exclude_from_total: false
+      });
+      if (accountError) {
+        setMessage("Guardamos tu perfil, pero no pudimos crear la cuenta principal.");
+        return;
+      }
     }
 
     setProfileReady(true);
@@ -413,7 +453,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
               <h1 className="mt-4 text-3xl font-black">Tu Wallet esta lista</h1>
               <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">Al entrar te guiaremos para crear una cuenta, enlazar tus correos bancarios y comprobar que los movimientos llegan correctamente.</p>
               <div className="mx-auto mt-5 grid max-w-md gap-2 text-left text-sm">
-                {["Agrega o conecta una cuenta", "Crea tu alias privado", "Configura el reenvio", "Envia una prueba y revisa el movimiento"].map((item, index) => (
+                {["Wallet crea tu cuenta principal", "Crea tu alias privado", "Configura el reenvio", "Envia una prueba y revisa el movimiento"].map((item, index) => (
                   <div key={item} className="flex items-center gap-3 rounded-2xl bg-white/55 p-3 dark:bg-white/8"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-500 text-xs font-black text-white">{index + 1}</span><span className="font-semibold">{item}</span></div>
                 ))}
               </div>

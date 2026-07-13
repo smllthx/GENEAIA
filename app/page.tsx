@@ -8,6 +8,7 @@ import {
   CreditCard,
   Flame,
   Gauge,
+  Mail,
   Moon,
   Plus,
   Search,
@@ -30,7 +31,6 @@ import { HeatmapSpending } from "@/components/HeatmapSpending";
 import { InstallPWAButton } from "@/components/InstallPWAButton";
 import { LiquidBackground } from "@/components/LiquidBackground";
 import { MonthlyVisualSummary as MonthlyVisualSummaryGrid } from "@/components/MonthlyVisualSummary";
-import { AddTransactionModal, AppleWalletImportModal, ConnectBankModal, ManualAccountModal } from "@/components/Modals";
 import { PrivacyToggle } from "@/components/PrivacyToggle";
 import { RealBankingPanel } from "@/components/RealBankingPanel";
 import { TodayCard as TodaySummaryCard } from "@/components/TodayCard";
@@ -48,11 +48,9 @@ import type { Account, BalancePoint, CategoryPoint, HeatmapDay, Transaction } fr
 const categoryColors = ["#0A84FF", "#34C759", "#FF9F0A", "#FF375F", "#AF52DE", "#64D2FF", "#FFD60A", "#8E8E93"];
 
 const secondaryItems = [
-  { label: "Cuentas", tab: "inicio" },
   { label: "Deudas", tab: "presupuesto" },
   { label: "Suscripciones", tab: "presupuesto" },
   { label: "Ajustes", tab: "inicio" },
-  { label: "Cartolas", tab: "automatizacion" },
   { label: "Seguridad", tab: "automatizacion" }
 ];
 
@@ -121,13 +119,13 @@ const emptyInsight = {
   id: "empty-insight",
   user_id: "current-user",
   title: "Faltan datos",
-  message: "Agrega una cuenta y registra movimientos para generar alertas reales.",
+  message: "Configura tu correo y reenvia avisos bancarios para generar alertas reales.",
   severity: "blue" as const,
   type: "alerta" as const,
   urgency: 1,
-  action: "Conecta un banco o agrega efectivo.",
-  action_label: "Agregar datos",
-  quick_button: "Agregar cuenta",
+  action: "Enlaza tu correo y envia el primer aviso.",
+  action_label: "Configurar correo",
+  quick_button: "Enlazar correo",
   previous_month_delta: 0,
   estimated_impact: 0,
   icon: "🔒",
@@ -135,7 +133,7 @@ const emptyInsight = {
 };
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState("inicio");
+  const [activeTab, setActiveTab] = useState("automatizacion");
   const [hidden, setHidden] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
@@ -184,7 +182,7 @@ export default function Home() {
             </div>
             <div className="min-w-0">
               <h1 className="truncate text-lg font-black sm:text-xl">Wallet</h1>
-              <p className="truncate text-xs text-muted-foreground">{liveMode ? "Banca real read-only" : "Listo para banca real"}</p>
+              <p className="truncate text-xs text-muted-foreground">{liveMode ? "Datos actualizados" : "Configura tu correo"}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -210,13 +208,12 @@ export default function Home() {
           <GlassCard className="p-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge>Bienvenido</Badge>
-              <Badge>{liveMode ? "Modo real activo" : "Sin datos de ejemplo"}</Badge>
+              <Badge>Captura principal: correo</Badge>
               <Badge>Moneda principal: CLP</Badge>
-              <Badge>OAuth read-only preparado</Badge>
               <Badge>PWA instalable</Badge>
             </div>
             <p className="mt-3 max-w-3xl text-sm font-medium text-muted-foreground">
-              Wallet usa conexiones read-only. Agrega cuentas manuales, efectivo o conecta bancos mediante proveedores seguros. Nunca se guardan claves bancarias reales.
+              Wallet recibe los avisos que reenvias desde tu correo y los deja listos para revisar. No necesita acceso a tu bandeja ni claves bancarias.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {["CLP", "USD", "EUR"].map((currency) => (
@@ -227,11 +224,7 @@ export default function Home() {
             </div>
           </GlassCard>
           <div className="flex flex-wrap gap-2">
-            <ConnectBankModal />
-            <ManualAccountModal />
-            <ManualAccountModal cash />
-            <AddTransactionModal />
-            <AppleWalletImportModal />
+            <Button onClick={() => setActiveTab("automatizacion")}><Mail className="h-4 w-4" />Configurar correo</Button>
           </div>
         </section>
 
@@ -246,6 +239,7 @@ export default function Home() {
         ) : (
           <>
             <RealBankingPanel
+              showPanel={false}
               onLiveData={({ accounts, transactions, liveMode: nextLiveMode }) => {
                 setLiveAccounts(accounts);
                 setLiveTransactions(transactions);
@@ -282,7 +276,7 @@ export default function Home() {
               />
             )}
             {activeTab === "presupuesto" && <Budgets monthlyProgress={monthlyProgress} />}
-            {activeTab === "automatizacion" && <AutomationPanel accounts={activeAccounts} />}
+            {activeTab === "automatizacion" && <AutomationPanel />}
             {activeTab === "ia" && <AISection transactions={activeTransactions} monthlySpent={activeMonthlySpent} totalBalance={activeBalance} categoryChart={categoryChart} heatmap={heatmap} />}
           </>
         )}
@@ -348,7 +342,7 @@ function Dashboard({
               ))}
             </div>
           ) : (
-            <EmptyState title="Agrega tu primera cuenta" copy="Conecta un banco, agrega efectivo o crea una cuenta manual para empezar." />
+            <EmptyState title="Aun no hay saldo" copy="Configura el correo y reenvia un aviso bancario para comenzar." />
           )}
         </GlassCard>
         <GlassCard>
@@ -366,7 +360,7 @@ function Dashboard({
             {transactions.length > 0 ? (
               <EmptyState title="Insights en preparación" copy="Wallet usará tus movimientos reales para generar alertas, sin datos inventados." />
             ) : (
-              <EmptyState title="Sin insights todavía" copy="Registra movimientos o conecta un banco para activar alertas inteligentes." />
+              <EmptyState title="Sin insights todavia" copy="Reenvia avisos bancarios para activar alertas inteligentes." />
             )}
           </div>
         </GlassCard>
@@ -571,7 +565,7 @@ function Movements({
             <p className="text-sm font-semibold text-muted-foreground">Movimientos</p>
             <h2 className="text-2xl font-black">Edición y revisión</h2>
           </div>
-          <AddTransactionModal />
+          <Badge>Captura por correo</Badge>
         </div>
         <div className="space-y-2">
           {visibleTransactions.length > 0 ? (
@@ -579,7 +573,7 @@ function Movements({
               <TransactionItem key={transaction.id} transaction={transaction} account={accountsById[transaction.account_id]} hidden={hidden} />
             ))
           ) : (
-            <EmptyState title="No hay movimientos" copy="Agrega una cuenta y registra tu primer gasto." />
+            <EmptyState title="No hay movimientos" copy="Configura el reenvio de correo y envia un aviso bancario para comenzar." />
           )}
         </div>
       </GlassCard>

@@ -77,9 +77,11 @@ const defaultProfile: ProfileDraft = {
 };
 
 export function RealBankingPanel({
-  onLiveData
+  onLiveData,
+  showPanel = true
 }: {
   onLiveData: (data: { accounts: Account[]; transactions: Transaction[]; liveMode: boolean }) => void;
+  showPanel?: boolean;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [status, setStatus] = useState<BankStatus | null>(null);
@@ -374,6 +376,8 @@ export function RealBankingPanel({
 
   const liveBalance = connections.length > 0 ? "Modo real activo" : "Sin bancos reales conectados";
   const ready = Boolean(status?.supabase && status.encryption && (status.providers.simplefin.configured || status.providers.fintoc.configured));
+
+  if (!showPanel) return null;
 
   return (
     <GlassCard className="mb-5" glow>

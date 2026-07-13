@@ -19,7 +19,7 @@ type AIAnswer = {
 const initialAnswer: AIAnswer = {
   diagnosis: "Pregúntame algo sobre tus datos.",
   key_points: ["Uso tus cuentas reales.", "Reviso tus movimientos.", "No invento montos si faltan datos."],
-  action: "Conecta un banco o registra movimientos para mejorar el cálculo.",
+  action: "Configura el correo y reenvia avisos bancarios para mejorar el calculo.",
   estimated_amount: 0,
   urgency: "información"
 };

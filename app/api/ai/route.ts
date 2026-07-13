@@ -5,11 +5,11 @@ import { getSupabaseForRequest, getUserFromRequest } from "@/lib/supabase/server
 const fallbackAnswer = {
   diagnosis: "Todavía necesito tus datos reales.",
   key_points: [
-    "Agrega una cuenta o conecta un banco.",
-    "Registra algunos movimientos.",
+    "Configura tu direccion privada de Wallet.",
+    "Reenvia algunos avisos bancarios.",
     "Crea tus presupuestos base."
   ],
-  action: "Empieza agregando efectivo o una cuenta manual.",
+  action: "Empieza enlazando tu correo en la seccion Correo.",
   estimated_amount: 0,
   urgency: "información"
 };

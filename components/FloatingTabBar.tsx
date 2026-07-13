@@ -1,14 +1,14 @@
 "use client";
 
-import { Bot, ChartPie, Home, ReceiptText, Workflow } from "lucide-react";
+import { Bot, ChartPie, Home, Mail, ReceiptText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const tabs = [
+  { id: "automatizacion", label: "Correo", icon: Mail },
   { id: "inicio", label: "Inicio", icon: Home },
   { id: "movimientos", label: "Movimientos", icon: ReceiptText },
   { id: "presupuesto", label: "Presupuesto", icon: ChartPie },
-  { id: "automatizacion", label: "Automatizar", icon: Workflow },
   { id: "ia", label: "IA", icon: Bot }
 ];
 
