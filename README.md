@@ -58,6 +58,8 @@ BANK_TOKEN_ENCRYPTION_KEY=
 INBOUND_EMAIL_DOMAIN=
 INBOUND_EMAIL_PROVIDER=
 INBOUND_EMAIL_WEBHOOK_SECRET=
+RESEND_API_KEY=
+RESEND_WEBHOOK_SECRET=
 ```
 
 La app requiere Supabase para crear cuentas. Si `OPENAI_API_KEY` no existe o falla, `Wallet Assistant` responde con un fallback sin inventar datos financieros.
@@ -196,6 +198,8 @@ La seccion **Automatizar** permite:
 
 Las cartolas se guardan en un bucket privado de Supabase con politicas por usuario. La migracion es `supabase/migrations/20260710180000_wallet_automation.sql`.
 
-La recepcion real de correo requiere un dominio inbound y un proveedor externo. Configura `INBOUND_EMAIL_DOMAIN`, `INBOUND_EMAIL_PROVIDER`, `INBOUND_EMAIL_WEBHOOK_SECRET` y `SUPABASE_SERVICE_ROLE_KEY` en Vercel. El proveedor debe enviar el webhook firmado a `/api/inbound-email/webhook` usando HMAC SHA-256 en `x-wallet-signature`.
+La opcion recomendada es Resend Receiving. Permite comenzar con su dominio administrado `*.resend.app`, sin comprar un dominio. Configura en Vercel `INBOUND_EMAIL_DOMAIN`, `INBOUND_EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET` y `SUPABASE_SERVICE_ROLE_KEY`. Registra el evento `email.received` con el endpoint `https://wallet-finance-ai.vercel.app/api/inbound-email/resend`.
+
+El endpoint verifica las firmas Svix antes de recuperar el contenido completo mediante la API de Resend. Los mensajes crean movimientos provisionales; nunca quedan confirmados automaticamente solo por llegar por email.
 
 Wallet no solicita contrasenas bancarias ni acceso completo al correo.

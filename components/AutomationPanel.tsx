@@ -68,6 +68,13 @@ type Reconciliation = {
   statement_rows: { raw_description: string; debit: number | string | null; credit: number | string | null } | Array<{ raw_description: string; debit: number | string | null; credit: number | string | null }>;
 };
 
+type InboundStatus = {
+  provider: string;
+  domain: string;
+  configured: boolean;
+  checks: { domain: boolean; apiKey: boolean; webhookSecret: boolean; serviceRole: boolean };
+};
+
 const statusCopy: Record<string, string> = {
   received: "Recibimos tu cartola",
   extracting_text: "Extrayendo movimientos",
@@ -87,6 +94,7 @@ export function AutomationPanel({ accounts }: { accounts: Account[] }) {
   const [aliases, setAliases] = useState<EmailAlias[]>([]);
   const [statements, setStatements] = useState<Statement[]>([]);
   const [matches, setMatches] = useState<Reconciliation[]>([]);
+  const [inboundStatus, setInboundStatus] = useState<InboundStatus | null>(null);
   const [selectedAccount, setSelectedAccount] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -118,6 +126,7 @@ export function AutomationPanel({ accounts }: { accounts: Account[] }) {
 
   useEffect(() => {
     if (!supabase) return;
+    fetch("/api/inbound-email/status").then((response) => response.json()).then(setInboundStatus).catch(() => setInboundStatus(null));
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession));
     return () => data.subscription.unsubscribe();
@@ -202,6 +211,7 @@ export function AutomationPanel({ accounts }: { accounts: Account[] }) {
   }
 
   const activeAlias = aliases.find((alias) => alias.status !== "revoked");
+  const aliasNeedsUpgrade = Boolean(activeAlias && inboundStatus?.configured && !activeAlias.address.endsWith(`@${inboundStatus.domain}`));
 
   return (
     <div className="grid gap-5 xl:grid-cols-[0.86fr_1.14fr]">
@@ -217,6 +227,11 @@ export function AutomationPanel({ accounts }: { accounts: Account[] }) {
           <p className="mt-3 text-sm text-muted-foreground">
             Reenvia solo las notificaciones bancarias. Wallet no necesita acceso a tu bandeja de entrada.
           </p>
+          <div className={`mt-3 rounded-2xl p-3 text-sm font-semibold ${inboundStatus?.configured ? "bg-emerald-400/12 text-emerald-700 dark:text-emerald-200" : "bg-orange-400/12 text-orange-700 dark:text-orange-200"}`}>
+            {inboundStatus?.configured
+              ? `Recepcion activa con ${inboundStatus.provider} en ${inboundStatus.domain}.`
+              : "Recepcion pendiente: falta conectar Resend en Vercel."}
+          </div>
           {activeAlias ? (
             <div className="mt-4 rounded-2xl bg-white/60 p-4 dark:bg-white/8">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -232,10 +247,15 @@ export function AutomationPanel({ accounts }: { accounts: Account[] }) {
                 <MailCheck className="h-4 w-4" />
                 {activeAlias.status === "active" ? "Reenvio verificado" : "Comprobar reenvio"}
               </Button>
+              {aliasNeedsUpgrade && (
+                <Button className="mt-2 w-full" onClick={createAlias} disabled={loading}>
+                  <RefreshCw className="h-4 w-4" />Crear alias real
+                </Button>
+              )}
             </div>
           ) : (
-            <Button className="mt-4 w-full" onClick={createAlias} disabled={loading}>
-              <Inbox className="h-4 w-4" />Crear mi alias
+            <Button className="mt-4 w-full" onClick={createAlias} disabled={loading || !inboundStatus?.configured}>
+              <Inbox className="h-4 w-4" />{inboundStatus?.configured ? "Crear mi alias" : "Falta activar recepcion"}
             </Button>
           )}
         </GlassCard>
