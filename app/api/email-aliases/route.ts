@@ -32,6 +32,16 @@ export async function POST(request: Request) {
   const domain = process.env.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || "inbox.wallet.local";
   const address = `u_${randomBytes(9).toString("base64url").toLowerCase()}@${domain}`;
   const provider = process.env.INBOUND_EMAIL_PROVIDER || "unconfigured";
+  const { data: existingAliases } = await supabase
+    .from("email_aliases")
+    .select("id,address,provider,status,created_at")
+    .eq("user_id", user.id)
+    .neq("status", "revoked");
+  const matchingAlias = existingAliases?.find((item) => item.address.endsWith(`@${domain}`));
+  if (matchingAlias) return NextResponse.json({ alias: matchingAlias, receivingConfigured: domain !== "inbox.wallet.local" });
+  if (existingAliases?.length) {
+    await supabase.from("email_aliases").update({ status: "revoked", revoked_at: new Date().toISOString() }).eq("user_id", user.id).neq("status", "revoked");
+  }
   const { data, error: dbError } = await supabase
     .from("email_aliases")
     .insert({ user_id: user.id, address, provider, status: "pending" })
