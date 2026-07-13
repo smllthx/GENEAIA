@@ -26,7 +26,7 @@ export function FloatingTabBar({ active, onChange }: { active: string; onChange:
                 onClick={() => onChange(tab.id)}
                 variant="ghost"
                 className={cn(
-                  "h-14 flex-col gap-0.5 rounded-full px-1 text-[11px]",
+                  "h-14 min-w-0 flex-col gap-0.5 rounded-full px-0 text-[9px] sm:px-1 sm:text-[11px]",
                   selected && "bg-foreground text-background hover:bg-foreground"
                 )}
               >
