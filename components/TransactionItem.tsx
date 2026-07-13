@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Pencil, Trash2 } from "lucide-react";
 import type { Account, Transaction } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -10,13 +10,19 @@ import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
 
 const categoryIcon: Record<string, string> = {
+  "Alimentación": "🍽️",
   Comida: "🍽️",
   Transporte: "🚇",
   Suscripciones: "🔁",
   Salud: "💚",
   Estudios: "🎓",
+  "Educación": "🎓",
   Ocio: "🎧",
   Mascota: "🐾",
+  Mascotas: "🐾",
+  Hogar: "🏠",
+  Compras: "🛍️",
+  Transferencias: "↔️",
   Otros: "✨",
   Ingresos: "💰"
 };
@@ -39,6 +45,8 @@ export function TransactionItem({
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const positive = transaction.amount > 0;
+  const DirectionIcon = positive ? ArrowDownLeft : ArrowUpRight;
+  const amountLabel = positive ? "Abono" : "Cargo";
 
   async function save() {
     if (!supabase || !merchant || amount === "" || !category) return;
@@ -84,22 +92,23 @@ export function TransactionItem({
   }
 
   return (
-    <div className="rounded-[1.25rem] bg-white/55 p-3 backdrop-blur dark:bg-white/8">
+    <div className={`rounded-[1.25rem] border p-3 backdrop-blur ${positive ? "border-emerald-400/25 bg-emerald-50/55 dark:bg-emerald-400/8" : "border-rose-400/25 bg-rose-50/55 dark:bg-rose-400/8"}`}>
       <div className="flex items-center gap-3">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-black/5 text-xl dark:bg-white/10">
-          {categoryIcon[transaction.category] ?? "•"}
+          <DirectionIcon className={`h-5 w-5 ${positive ? "text-emerald-600" : "text-rose-600"}`} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate font-bold">{transaction.merchant}</p>
-            {transaction.is_ai_categorized && <Badge className="shrink-0 px-2 py-0.5">IA</Badge>}
+            <Badge className={positive ? "shrink-0 bg-emerald-500/15 px-2 py-0.5 text-emerald-700" : "shrink-0 bg-rose-500/15 px-2 py-0.5 text-rose-700"}>{amountLabel}</Badge>
+            {transaction.is_ai_categorized && <Badge className="shrink-0 px-2 py-0.5">IA · {transaction.category}</Badge>}
           </div>
           <p className="truncate text-xs text-muted-foreground">
             {transaction.date} · {transaction.category} · {account?.institution ?? "Cuenta"}
           </p>
         </div>
-        <p className={`text-right font-black ${positive ? "text-emerald-600" : ""}`}>
-          {hidden ? "••••" : formatCurrency(transaction.amount)}
+        <p className={`text-right font-black tabular-nums ${positive ? "text-emerald-600" : "text-rose-600"}`}>
+          {hidden ? "••••" : `${positive ? "+" : "−"}${formatCurrency(Math.abs(transaction.amount))}`}
         </p>
         <div className="flex shrink-0 gap-1">
           <Button variant="glass" size="icon" onClick={() => setEditing((value) => !value)} aria-label="Editar movimiento">

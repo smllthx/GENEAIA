@@ -1,3 +1,5 @@
+import { classifyTransaction } from "@/lib/ai/transaction-classifier";
+
 type FintocAccount = {
   id: string;
   name?: string;
@@ -94,14 +96,18 @@ export function normalizeFintocAccount(account: FintocAccount, fallbackInstituti
 
 export function normalizeFintocMovement(movement: FintocMovement) {
   const description = movement.description ?? "Movimiento bancario";
-  const category = inferCategory(description);
+  const classification = classifyTransaction({
+    text: description,
+    amount: movement.amount,
+    directionHint: movement.amount > 0 ? "income" : "expense"
+  });
 
   return {
     external_transaction_id: movement.id,
     merchant: cleanMerchant(description),
-    amount: movement.amount,
+    amount: classification.signedAmount,
     date: (movement.post_date ?? movement.transaction_date ?? new Date().toISOString()).slice(0, 10),
-    category,
+    category: classification.category,
     description,
     is_recurring: ["Spotify", "Netflix", "iCloud"].some((name) => description.toLowerCase().includes(name.toLowerCase())),
     is_ai_categorized: true,
@@ -114,18 +120,4 @@ function cleanMerchant(description: string) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 42) || "Movimiento";
-}
-
-function inferCategory(description: string) {
-  const lower = description.toLowerCase();
-
-  if (lower.includes("uber") || lower.includes("metro") || lower.includes("bip")) return "Transporte";
-  if (lower.includes("jumbo") || lower.includes("starbucks") || lower.includes("restaurant") || lower.includes("comida")) return "Comida";
-  if (lower.includes("netflix") || lower.includes("spotify") || lower.includes("icloud")) return "Suscripciones";
-  if (lower.includes("farmacia") || lower.includes("clinica") || lower.includes("salud")) return "Salud";
-  if (lower.includes("universidad") || lower.includes("colegio")) return "Estudios";
-  if (lower.includes("mascota") || lower.includes("veterinaria") || lower.includes("carlino")) return "Mascota";
-  if (lower.includes("sueldo") || lower.includes("abono") || lower.includes("pago")) return "Ingresos";
-
-  return "Otros";
 }

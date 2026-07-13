@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff, TrendingUp } from "lucide-react";
+import { Eye, EyeOff, RefreshCw } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,14 +35,10 @@ export function BalanceCard({
       </div>
       <div className="relative mt-6 flex flex-wrap items-center gap-2">
         <Badge className="border-white/25 bg-white/18 text-white">
-          <TrendingUp className="mr-1 h-3.5 w-3.5" />
-          +5,8% mensual
+          <RefreshCw className="mr-1 h-3.5 w-3.5" />
+          Saldo consolidado
         </Badge>
-        <Badge className="border-white/25 bg-white/18 text-white">Proyección: {formatCurrency(918000)}</Badge>
       </div>
-      <p className="relative mt-5 max-w-full text-sm font-medium text-white/78 sm:max-w-sm">
-        Tus conexiones bancarias son solo de lectura. Wallet no puede transferir dinero ni mover fondos.
-      </p>
     </motion.section>
   );
 }

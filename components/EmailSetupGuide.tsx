@@ -35,6 +35,7 @@ export function EmailSetupGuide({
   alias,
   loading,
   confirmationUrl,
+  initialProvider,
   onCreateAlias,
   onStartVerification,
   onRefresh,
@@ -44,6 +45,7 @@ export function EmailSetupGuide({
   alias?: Alias;
   loading: boolean;
   confirmationUrl?: string | null;
+  initialProvider: string;
   onCreateAlias: () => Promise<void>;
   onStartVerification: (aliasId: string) => Promise<void>;
   onRefresh: () => Promise<void>;
@@ -53,7 +55,12 @@ export function EmailSetupGuide({
   const [provider, setProvider] = useState("gmail");
 
   useEffect(() => {
+    if (providers.some((item) => item.id === initialProvider)) setProvider(initialProvider);
+  }, [initialProvider]);
+
+  useEffect(() => {
     if (alias?.status === "active") setStep(4);
+    else if (alias) setStep((current) => Math.max(current, 3));
   }, [alias?.status]);
 
   async function nextFromProvider() {
@@ -90,7 +97,7 @@ export function EmailSetupGuide({
           <h3 className="mt-4 text-xl font-black">Crea tu direccion privada</h3>
           <p className="mt-2 text-sm text-muted-foreground">Es unica para tu cuenta y sirve solo para recibir notificaciones.</p>
           {!status?.configured ? (
-            <div className="mt-4 rounded-2xl bg-orange-400/12 p-4 text-sm font-semibold text-orange-700 dark:text-orange-200">Wallet esta esperando la activacion de Resend. Podras continuar cuando el servicio aparezca activo.</div>
+            <div className="mt-4 rounded-2xl bg-orange-400/12 p-4 text-sm font-semibold text-orange-700 dark:text-orange-200">La recepción de correos no está disponible en este entorno.</div>
           ) : alias ? (
             <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-white/60 p-4 dark:bg-white/8"><span className="min-w-0 truncate font-black">{alias.address}</span><Button variant="glass" size="icon" aria-label="Copiar alias" onClick={() => navigator.clipboard.writeText(alias.address)}><Copy className="h-4 w-4" /></Button></div>
           ) : (

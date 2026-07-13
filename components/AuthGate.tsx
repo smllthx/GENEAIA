@@ -72,6 +72,18 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [setupStep, setSetupStep] = useState(1);
+  const [passkeySupported, setPasskeySupported] = useState(false);
+  const appleAuthEnabled = process.env.NEXT_PUBLIC_APPLE_AUTH_ENABLED === "true";
+  const googleAuthEnabled = process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true";
+
+  useEffect(() => {
+    setPasskeySupported("PublicKeyCredential" in window && window.isSecureContext);
+    const authError = new URLSearchParams(window.location.search).get("auth_error");
+    if (authError) {
+      setMessage(decodeURIComponent(authError));
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     if (!supabase) {
@@ -184,7 +196,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setLoading(false);
 
     if (error) {
-      setMessage(error.message);
+      setMessage(humanAuthError(error.message));
       return;
     }
 
@@ -212,24 +224,25 @@ export function AuthGate({ children }: { children: ReactNode }) {
             type: "sms"
           });
     setLoading(false);
-    setMessage(error ? error.message : "Código correcto. Entrando a Wallet.");
+    setMessage(error ? humanAuthError(error.message) : "Código correcto. Entrando a Wallet.");
   }
 
   async function signInWithOAuth(provider: "google" | "apple") {
     if (!supabase) return;
-    await supabase.auth.signInWithOAuth({
+    const { error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: getSiteUrl() }
+      options: { redirectTo: `${getSiteUrl()}auth/callback?next=/` }
     });
+    if (error) setMessage(error.message);
   }
 
   async function signInWithPasskey() {
     if (!supabase) return;
 
     setLoading(true);
-    const { error } = await (supabase.auth as unknown as { signInWithPasskey: () => Promise<{ error: Error | null }> }).signInWithPasskey();
+    const { error } = await supabase.auth.signInWithPasskey();
     setLoading(false);
-    setMessage(error ? `Passkey no disponible: ${error.message}` : "Sesión iniciada.");
+    setMessage(error ? humanAuthError(error.message) : "Sesion iniciada.");
   }
 
   async function saveProfile() {
@@ -310,13 +323,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
       <AuthShell>
         <GlassCard glow className="w-full max-w-xl">
           <div className="flex items-center justify-between gap-3">
-            <Badge>Cuenta obligatoria</Badge>
+            <Badge>Acceso seguro</Badge>
             <InstallPWAButton />
           </div>
           <h1 className="mt-5 text-4xl font-black tracking-normal">Entrar a Wallet</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Crea tu cuenta para guardar bancos, saldos, presupuestos, gastos y deudas. No hay modo demo.
-          </p>
+          <p className="mt-2 text-sm text-muted-foreground">Usa un código de un solo uso o una passkey registrada.</p>
           {!codeSent ? (
             <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]">
               <Input
@@ -324,7 +335,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
                 onChange={(event) => setIdentifier(event.target.value)}
                 placeholder="correo o +56912345678"
                 type="text"
-                inputMode="email"
+                inputMode="text"
               />
               <Button onClick={sendVerificationCode} disabled={loading || !identifier.trim()}>
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
@@ -366,26 +377,24 @@ export function AuthGate({ children }: { children: ReactNode }) {
               </div>
             </div>
           )}
-          <p className="mt-3 rounded-2xl bg-white/55 p-3 text-xs font-semibold text-muted-foreground dark:bg-white/8">
-            Puedes entrar con correo o SMS chileno si Supabase Phone Auth esta activo con Twilio.
-          </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button variant="glass" onClick={signInWithPasskey} disabled={loading}>
+            <Button variant="glass" onClick={signInWithPasskey} disabled={loading || !passkeySupported} title={passkeySupported ? "Entrar con una passkey registrada" : "WebAuthn no disponible en este navegador"}>
               <Fingerprint className="h-4 w-4" />
-              FaceID/passkey
+              Passkey
             </Button>
-            <Button variant="glass" onClick={() => signInWithOAuth("google")}>
-              <KeyRound className="h-4 w-4" />
-              Google
-            </Button>
-            <Button variant="glass" onClick={() => signInWithOAuth("apple")}>
-              <KeyRound className="h-4 w-4" />
-              Apple
-            </Button>
+            {googleAuthEnabled && (
+              <Button variant="glass" onClick={() => signInWithOAuth("google")}>
+                <KeyRound className="h-4 w-4" />
+                Google
+              </Button>
+            )}
+            {appleAuthEnabled && (
+              <Button variant="glass" onClick={() => signInWithOAuth("apple")}>
+                <KeyRound className="h-4 w-4" />
+                Apple
+              </Button>
+            )}
           </div>
-          <p className="mt-4 rounded-2xl bg-white/55 p-3 text-xs font-semibold text-muted-foreground dark:bg-white/8">
-            Tus conexiones bancarias serán read-only. Wallet no puede transferir dinero ni mover fondos.
-          </p>
           {message && <p className="mt-3 rounded-2xl bg-sky-400/15 p-3 text-sm font-semibold">{message}</p>}
         </GlassCard>
       </AuthShell>
@@ -482,7 +491,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
 function AuthShell({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-7xl items-center justify-center px-4 py-8">
+    <div className="app-shell mx-auto flex min-h-dvh w-full max-w-7xl items-center justify-center px-4 pb-8">
       <div className="w-full">
         <div className="mb-6 flex items-center justify-center gap-3">
           <div className="h-16 w-16 overflow-hidden rounded-[1.35rem] bg-black shadow-glow ring-1 ring-white/35">
@@ -523,4 +532,13 @@ function isSetupStepComplete(profile: ProfileDraft, step: number) {
   if (step === 2) return Boolean(profile.main_bank.trim());
   if (step === 3) return Number(profile.daily_budget) > 0 && Number(profile.weekly_budget) > 0 && Number(profile.monthly_budget) > 0;
   return true;
+}
+
+function humanAuthError(message: string) {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("not enabled")) return "Las passkeys deben activarse en Supabase antes de usarlas.";
+  if (normalized.includes("credential") && normalized.includes("not found")) return "No hay una passkey registrada para Wallet en este dispositivo.";
+  if (normalized.includes("cancel")) return "La verificacion fue cancelada.";
+  if (normalized.includes("provider is not enabled")) return "Este acceso aun no esta habilitado en Supabase.";
+  return message;
 }

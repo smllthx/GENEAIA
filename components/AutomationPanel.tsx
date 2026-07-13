@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
-  RefreshCw,
-  ShieldCheck
+  RefreshCw
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { GlassCard } from "@/components/GlassCard";
@@ -42,6 +41,7 @@ export function AutomationPanel() {
   const [aliases, setAliases] = useState<EmailAlias[]>([]);
   const [inboundStatus, setInboundStatus] = useState<InboundStatus | null>(null);
   const [inboundMessages, setInboundMessages] = useState<InboundMessage[]>([]);
+  const [emailProvider, setEmailProvider] = useState("gmail");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -53,18 +53,26 @@ export function AutomationPanel() {
 
   const loadAutomation = useCallback(async () => {
     if (!session) return;
-    const headers = await authHeaders();
-    const [aliasResponse, messageResponse] = await Promise.all([
-      fetch("/api/email-aliases", { headers }),
-      fetch("/api/inbound-email/messages", { headers })
-    ]);
-    const [aliasJson, messageJson] = await Promise.all([
-      aliasResponse.json(),
-      messageResponse.json()
-    ]);
-    setAliases(aliasJson.aliases ?? []);
-    setInboundMessages(messageJson.messages ?? []);
-  }, [authHeaders, session]);
+    try {
+      const headers = await authHeaders();
+      const [aliasResponse, messageResponse, profileResponse] = await Promise.all([
+        fetch("/api/email-aliases", { headers, cache: "no-store" }),
+        fetch("/api/inbound-email/messages", { headers, cache: "no-store" }),
+        supabase?.from("users").select("email_provider").eq("id", session.user.id).maybeSingle()
+      ]);
+      if (!aliasResponse.ok || !messageResponse.ok) throw new Error("automation_load_failed");
+      const [aliasJson, messageJson] = await Promise.all([
+        aliasResponse.json(),
+        messageResponse.json()
+      ]);
+      setAliases(aliasJson.aliases ?? []);
+      setInboundMessages(messageJson.messages ?? []);
+      if (profileResponse?.data?.email_provider) setEmailProvider(profileResponse.data.email_provider);
+      setMessage("");
+    } catch {
+      setMessage("No se pudo actualizar el correo. Revisa tu conexión e intenta nuevamente.");
+    }
+  }, [authHeaders, session, supabase]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -77,6 +85,33 @@ export function AutomationPanel() {
   useEffect(() => {
     void loadAutomation();
   }, [loadAutomation]);
+
+  useEffect(() => {
+    if (!supabase || !session) return;
+
+    const reload = () => {
+      void loadAutomation();
+      window.dispatchEvent(new Event("wallet-data-changed"));
+    };
+    const channel = supabase
+      .channel(`wallet-email-${session.user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "email_aliases", filter: `user_id=eq.${session.user.id}` }, reload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "inbound_messages", filter: `user_id=eq.${session.user.id}` }, reload)
+      .subscribe();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadAutomation();
+    };
+    const interval = window.setInterval(onVisible, 30_000);
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+      void supabase.removeChannel(channel);
+    };
+  }, [loadAutomation, session, supabase]);
 
   async function createAlias() {
     setLoading(true);
@@ -105,11 +140,13 @@ export function AutomationPanel() {
 
   async function saveEmailProvider(provider: string) {
     if (!supabase || !session) return;
-    await supabase.from("users").update({
+    setEmailProvider(provider);
+    const { error } = await supabase.from("users").update({
       email_provider: provider,
       notification_email: session.user.email ?? null,
       updated_at: new Date().toISOString()
     }).eq("id", session.user.id);
+    if (error) setMessage("No se pudo guardar el proveedor de correo.");
   }
 
   const activeAlias = aliases.find((alias) => alias.status !== "revoked");
@@ -123,6 +160,7 @@ export function AutomationPanel() {
         alias={guideAlias}
         loading={loading}
         confirmationUrl={confirmationUrl}
+        initialProvider={emailProvider}
         onCreateAlias={createAlias}
         onStartVerification={startVerification}
         onRefresh={loadAutomation}
@@ -147,12 +185,6 @@ export function AutomationPanel() {
           </div>
         </GlassCard>
 
-        <GlassCard>
-          <div className="flex items-start gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/12 text-emerald-600"><ShieldCheck className="h-5 w-5" /></div>
-            <div><h2 className="text-lg font-black">Solo reenvio, nunca acceso total</h2><p className="mt-1 text-sm text-muted-foreground">Wallet no entra a tu correo. Solo procesa los mensajes bancarios que tu regla envia al alias privado.</p></div>
-          </div>
-        </GlassCard>
       </div>
 
       {message && <p className="xl:col-span-2 rounded-2xl bg-sky-400/15 p-3 text-sm font-semibold" role="status">{message}</p>}

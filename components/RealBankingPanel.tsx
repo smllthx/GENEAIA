@@ -80,7 +80,7 @@ export function RealBankingPanel({
   onLiveData,
   showPanel = true
 }: {
-  onLiveData: (data: { accounts: Account[]; transactions: Transaction[]; liveMode: boolean }) => void;
+  onLiveData: (data: { accounts: Account[]; transactions: Transaction[]; liveMode: boolean; budgets: { daily: number; weekly: number; monthly: number } }) => void;
   showPanel?: boolean;
 }) {
   const supabase = useMemo(() => createClient(), []);
@@ -105,14 +105,17 @@ export function RealBankingPanel({
 
   const loadLiveData = useCallback(async () => {
     if (!supabase || !session) {
-      onLiveData({ accounts: [], transactions: [], liveMode: false });
+      onLiveData({ accounts: [], transactions: [], liveMode: false, budgets: { daily: 0, weekly: 0, monthly: 0 } });
       return;
     }
 
-    const [{ data: accounts }, { data: transactions }] = await Promise.all([
+    const [{ data: accounts }, { data: transactions }, { data: walletProfile }] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at", { ascending: false }),
-      supabase.from("transactions").select("*").order("date", { ascending: false }).limit(160)
+      supabase.from("transactions").select("*").order("date", { ascending: false }).limit(160),
+      supabase.from("users").select("daily_budget,weekly_budget,monthly_budget").eq("id", session.user.id).maybeSingle()
     ]);
+
+    const transactionRows = transactions ?? [];
 
     const mappedAccounts = (accounts ?? []).map((account) => ({
       id: account.id,
@@ -132,7 +135,7 @@ export function RealBankingPanel({
       created_at: account.created_at
     })) as Account[];
 
-    const mappedTransactions = (transactions ?? []).map((transaction) => ({
+    const mappedTransactions = transactionRows.map((transaction) => ({
       id: transaction.id,
       user_id: transaction.user_id,
       account_id: transaction.account_id,
@@ -151,7 +154,12 @@ export function RealBankingPanel({
     onLiveData({
       accounts: mappedAccounts,
       transactions: mappedTransactions,
-      liveMode: mappedAccounts.length > 0
+      liveMode: mappedAccounts.length > 0,
+      budgets: {
+        daily: Number(walletProfile?.daily_budget ?? 0),
+        weekly: Number(walletProfile?.weekly_budget ?? 0),
+        monthly: Number(walletProfile?.monthly_budget ?? 0)
+      }
     });
   }, [onLiveData, session, supabase]);
 
@@ -185,10 +193,12 @@ export function RealBankingPanel({
   }, [session, supabase]);
 
   useEffect(() => {
-    fetch("/api/bank/status")
-      .then((response) => response.json())
-      .then(setStatus)
-      .catch(() => setStatus(null));
+    if (showPanel) {
+      fetch("/api/bank/status", { cache: "no-store" })
+        .then((response) => response.json())
+        .then(setStatus)
+        .catch(() => setStatus(null));
+    }
 
     if (!supabase) return;
 
@@ -199,28 +209,35 @@ export function RealBankingPanel({
     });
 
     return () => listener.subscription.unsubscribe();
-  }, [supabase]);
+  }, [showPanel, supabase]);
 
   useEffect(() => {
-    void loadConnections();
     void loadLiveData();
-    void loadProfile();
-  }, [loadConnections, loadLiveData, loadProfile]);
+    if (showPanel) {
+      void loadConnections();
+      void loadProfile();
+    }
+  }, [loadConnections, loadLiveData, loadProfile, showPanel]);
 
   useEffect(() => {
     if (!supabase || !session) return;
 
     const reload = () => {
-      void loadConnections();
       void loadLiveData();
+      if (showPanel) void loadConnections();
     };
 
-    const channel = supabase
+    let channel = supabase
       .channel("wallet-live-balances")
       .on("postgres_changes", { event: "*", schema: "public", table: "accounts" }, reload)
       .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, reload)
-      .on("postgres_changes", { event: "*", schema: "public", table: "bank_connections" }, reload)
-      .subscribe();
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "users", filter: `id=eq.${session.user.id}` }, reload);
+
+    if (showPanel) {
+      channel = channel.on("postgres_changes", { event: "*", schema: "public", table: "bank_connections" }, reload);
+    }
+
+    channel.subscribe();
 
     window.addEventListener("wallet-data-changed", reload);
 
@@ -228,7 +245,7 @@ export function RealBankingPanel({
       window.removeEventListener("wallet-data-changed", reload);
       void supabase.removeChannel(channel);
     };
-  }, [loadConnections, loadLiveData, session, supabase]);
+  }, [loadConnections, loadLiveData, session, showPanel, supabase]);
 
   async function signIn() {
     if (!supabase || !email) return;
@@ -246,7 +263,7 @@ export function RealBankingPanel({
     if (!supabase) return;
     await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: getSiteUrl() }
+      options: { redirectTo: `${getSiteUrl()}auth/callback?next=/` }
     });
   }
 
@@ -254,7 +271,7 @@ export function RealBankingPanel({
     if (!supabase) return;
 
     setLoading(true);
-    const { error } = await (supabase.auth as unknown as { signInWithPasskey: () => Promise<{ error: Error | null }> }).signInWithPasskey();
+    const { error } = await supabase.auth.signInWithPasskey();
     setLoading(false);
     setMessage(error ? `Passkey no disponible: ${error.message}` : "Sesión iniciada con passkey.");
   }
@@ -263,7 +280,7 @@ export function RealBankingPanel({
     if (!supabase || !session) return;
 
     setLoading(true);
-    const { error } = await (supabase.auth as unknown as { registerPasskey: () => Promise<{ error: Error | null }> }).registerPasskey();
+    const { error } = await supabase.auth.registerPasskey();
     setLoading(false);
     setMessage(error ? `No se pudo crear passkey: ${error.message}` : "Passkey creada. En iPhone puede usar FaceID.");
   }

@@ -23,6 +23,8 @@ type WalletContext = {
   summary?: {
     balance?: number;
     spending?: number;
+    today_spending?: number;
+    weekly_spending?: number;
     income?: number;
     transaction_count?: number;
     account_count?: number;
@@ -39,13 +41,15 @@ function localFinancialAnswer(question: string, context: WalletContext | null) {
 
   const balance = Number(context.summary.balance ?? 0);
   const spending = Number(context.summary.spending ?? 0);
+  const todaySpending = Number(context.summary.today_spending ?? 0);
+  const weeklySpending = Number(context.summary.weekly_spending ?? 0);
   const income = Number(context.summary.income ?? 0);
   const weeklyBudget = Number(context.profile?.weekly_budget ?? 0);
   const dailyBudget = Number(context.profile?.daily_budget ?? 0);
   const monthlyBudget = Number(context.profile?.monthly_budget ?? 0);
   const daysLeft = Math.max(1, new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() - new Date().getDate() + 1);
-  const availableToday = dailyBudget > 0 ? Math.max(0, dailyBudget - Math.round(spending / Math.max(1, new Date().getDate()))) : Math.max(0, Math.floor(balance / daysLeft));
-  const availableWeek = weeklyBudget > 0 ? Math.max(0, weeklyBudget - spending) : Math.max(0, Math.floor(balance / 4));
+  const availableToday = Math.max(0, Math.min(balance, dailyBudget > 0 ? dailyBudget - todaySpending : Math.floor(balance / daysLeft)));
+  const availableWeek = Math.max(0, Math.min(balance, weeklyBudget > 0 ? weeklyBudget - weeklySpending : Math.floor(balance / 4)));
   const categories = Object.entries(context.summary.by_category ?? {}).sort(([, a], [, b]) => Number(b) - Number(a));
   const topCategory = categories[0];
   const activeSubscriptions = (context.subscriptions ?? []).filter((item) => item.active !== false);
@@ -95,6 +99,20 @@ function localFinancialAnswer(question: string, context: WalletContext | null) {
     };
   }
 
+  if (lowerQuestion.includes("gast") || lowerQuestion.includes("categor")) {
+    return {
+      diagnosis: topCategory ? `${topCategory[0]} concentra la mayor parte de tus gastos.` : "Aún no hay gastos suficientes para comparar.",
+      key_points: [
+        `Gasto del mes: ${formatNumber(spending)}.`,
+        topCategory ? `${topCategory[0]} suma ${formatNumber(Number(topCategory[1]))}.` : "No hay una categoría dominante.",
+        `Movimientos analizados: ${context.summary.transaction_count ?? 0}.`
+      ],
+      action: topCategory ? `Revisa los últimos cargos de ${topCategory[0]} antes de ajustar su límite.` : "Importa movimientos para obtener una comparación útil.",
+      estimated_amount: topCategory ? Number(topCategory[1]) : 0,
+      urgency: spending > monthlyBudget && monthlyBudget > 0 ? "alta" : "información"
+    };
+  }
+
   return {
     diagnosis: balance > 0 ? "Tu situación se puede calcular con tus datos actuales." : "Tu saldo está bajo o no cargado.",
     key_points: [
@@ -133,17 +151,24 @@ export async function POST(request: Request) {
   ]);
   const accountRows = accounts.data ?? [];
   const transactionRows = transactions.data ?? [];
-  const spending = transactionRows.filter((transaction) => Number(transaction.amount) < 0).reduce((sum, transaction) => sum + Math.abs(Number(transaction.amount)), 0);
-  const income = transactionRows.filter((transaction) => Number(transaction.amount) > 0).reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+  const monthPrefix = new Date().toISOString().slice(0, 7);
+  const todayPrefix = new Date().toISOString().slice(0, 10);
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  const currentMonthTransactions = transactionRows.filter((transaction) => String(transaction.date).startsWith(monthPrefix));
+  const spending = currentMonthTransactions.filter((transaction) => Number(transaction.amount) < 0).reduce((sum, transaction) => sum + Math.abs(Number(transaction.amount)), 0);
+  const income = currentMonthTransactions.filter((transaction) => Number(transaction.amount) > 0).reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+  const todaySpending = transactionRows.filter((transaction) => String(transaction.date).startsWith(todayPrefix) && Number(transaction.amount) < 0).reduce((sum, transaction) => sum + Math.abs(Number(transaction.amount)), 0);
+  const weeklySpending = transactionRows.filter((transaction) => new Date(transaction.date) >= sevenDaysAgo && Number(transaction.amount) < 0).reduce((sum, transaction) => sum + Math.abs(Number(transaction.amount)), 0);
   const balance = accountRows.filter((account) => !account.is_hidden && !account.exclude_from_total).reduce((sum, account) => sum + Number(account.balance ?? 0), 0);
-  const byCategory = transactionRows.reduce<Record<string, number>>((acc, transaction) => {
+  const byCategory = currentMonthTransactions.reduce<Record<string, number>>((acc, transaction) => {
     const amount = Number(transaction.amount);
     if (amount < 0) acc[transaction.category] = (acc[transaction.category] ?? 0) + Math.abs(amount);
     return acc;
   }, {});
   const context = {
     profile: profile.data,
-    summary: { balance, spending, income, transaction_count: transactionRows.length, account_count: accountRows.length, by_category: byCategory },
+    summary: { balance, spending, today_spending: todaySpending, weekly_spending: weeklySpending, income, transaction_count: transactionRows.length, account_count: accountRows.length, by_category: byCategory },
     accounts: accountRows,
     transactions: transactionRows.slice(0, 60),
     budgets: budgets.data ?? [],
@@ -155,8 +180,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ source: "local-calculation", answer: localFinancialAnswer(question, context as WalletContext) });
   }
 
+  const directCalculation = /semana|suscrip|deuda|gast|categor|presupuesto|ahorr|saldo|puedo/i.test(question);
+  if (directCalculation) {
+    return NextResponse.json({ source: "local-calculation", answer: localFinancialAnswer(question, context as WalletContext) });
+  }
+
   try {
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 0, timeout: 6_000 });
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.25,
@@ -180,6 +210,6 @@ export async function POST(request: Request) {
       answer: content ? JSON.parse(content) : fallbackAnswer
     });
   } catch {
-    return NextResponse.json({ source: "fallback", answer: fallbackAnswer });
+    return NextResponse.json({ source: "local-calculation", answer: localFinancialAnswer(question, context as WalletContext) });
   }
 }

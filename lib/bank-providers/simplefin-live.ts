@@ -1,3 +1,5 @@
+import { classifyTransaction } from "@/lib/ai/transaction-classifier";
+
 type SimpleFinConnection = {
   conn_id: string;
   name: string;
@@ -109,13 +111,19 @@ export function normalizeSimpleFinAccount(account: SimpleFinAccount, connections
 
 export function normalizeSimpleFinTransaction(transaction: SimpleFinTransaction) {
   const description = sanitizeSimpleFinMessage(transaction.description);
+  const rawAmount = Number(transaction.amount ?? 0);
+  const classification = classifyTransaction({
+    text: `${description} ${transaction.extra?.category ?? ""}`,
+    amount: rawAmount,
+    directionHint: rawAmount > 0 ? "income" : "expense"
+  });
 
   return {
     external_transaction_id: transaction.id,
     merchant: description.slice(0, 42) || "Movimiento",
-    amount: Number(transaction.amount ?? 0),
+    amount: classification.signedAmount,
     date: new Date((transaction.posted || transaction.transacted_at || Date.now() / 1000) * 1000).toISOString().slice(0, 10),
-    category: transaction.extra?.category ?? inferCategory(description),
+    category: transaction.extra?.category ?? classification.category,
     description,
     is_recurring: ["spotify", "netflix", "icloud", "rent", "arriendo"].some((name) => description.toLowerCase().includes(name)),
     is_ai_categorized: true,
@@ -136,18 +144,4 @@ function normalizeCurrency(currency: string) {
 
 function sanitizeSimpleFinMessage(message: string) {
   return message.replace(/[<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 240);
-}
-
-function inferCategory(description: string) {
-  const lower = description.toLowerCase();
-
-  if (lower.includes("uber") || lower.includes("metro") || lower.includes("transport")) return "Transporte";
-  if (lower.includes("restaurant") || lower.includes("coffee") || lower.includes("market") || lower.includes("grocery")) return "Comida";
-  if (lower.includes("netflix") || lower.includes("spotify") || lower.includes("icloud")) return "Suscripciones";
-  if (lower.includes("pharmacy") || lower.includes("farmacia") || lower.includes("health")) return "Salud";
-  if (lower.includes("school") || lower.includes("university") || lower.includes("universidad")) return "Estudios";
-  if (lower.includes("pet") || lower.includes("mascota") || lower.includes("vet")) return "Mascota";
-  if (lower.includes("payroll") || lower.includes("deposit") || lower.includes("salary")) return "Ingresos";
-
-  return "Otros";
 }

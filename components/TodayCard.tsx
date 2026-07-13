@@ -5,7 +5,7 @@ import { GlassCard } from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 
-export function TodayCard({ availableToday, hidden }: { availableToday: number; hidden: boolean }) {
+export function TodayCard({ availableToday, hidden, onReview, onSave, onPayments }: { availableToday: number; hidden: boolean; onReview: () => void; onSave: () => void; onPayments: () => void }) {
   return (
     <GlassCard glow>
       <div className="flex min-w-0 items-start justify-between gap-3">
@@ -21,9 +21,9 @@ export function TodayCard({ availableToday, hidden }: { availableToday: number; 
         </div>
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
-        <Button variant="glass">Revisar gasto</Button>
-        <Button variant="glass">Ahorrar ahora</Button>
-        <Button variant="glass">Ver próximos pagos</Button>
+        <Button variant="glass" onClick={onReview}>Revisar gasto</Button>
+        <Button variant="glass" onClick={onSave}>Ajustar plan</Button>
+        <Button variant="glass" onClick={onPayments}>Ver pagos</Button>
       </div>
     </GlassCard>
   );

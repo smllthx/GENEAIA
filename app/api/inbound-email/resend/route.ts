@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { classifyTransaction } from "@/lib/ai/transaction-classifier";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -79,7 +80,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: messageError.message }, { status: 500 });
   }
 
-  const parsed = parseBankNotification(`${email.subject}\n${email.text ?? stripHtml(email.html ?? "")}`, email.created_at);
+  const bankNotificationText = `${email.subject}\n${email.text ?? stripHtml(email.html ?? "")}`;
+  const parsed = parseBankNotification(bankNotificationText, email.created_at);
   if (!parsed) {
     await Promise.all([
       supabase.from("inbound_messages").update({ processing_status: "needs_review", error_code: "EMAIL_PARSE_FAILED" }).eq("id", message.id),
@@ -98,6 +100,11 @@ export async function POST(request: Request) {
   }
 
   const sourceKey = `resend:${event.data.email_id}`;
+  const classification = classifyTransaction({
+    text: `${bankNotificationText}\n${parsed.merchant}`,
+    amount: Number(parsed.amount),
+    directionHint: parsed.direction
+  });
   const { data: transaction, error: transactionError } = await supabase
     .from("transactions")
     .insert({
@@ -106,16 +113,16 @@ export async function POST(request: Request) {
       merchant: parsed.merchant,
       raw_merchant: parsed.merchant,
       normalized_merchant: parsed.merchant,
-      amount: `-${parsed.amount}`,
+      amount: classification.signedAmount,
       date: parsed.date,
-      category: "Por revisar",
-      description: "Notificacion bancaria recibida por correo",
+      category: classification.category,
+      description: `Notificación bancaria · ${classification.direction === "income" ? "abono" : "cargo"} · confianza IA ${Math.round(classification.confidence * 100)}%`,
       is_recurring: false,
-      is_ai_categorized: false,
+      is_ai_categorized: true,
       reviewed: false,
       status: "provisional",
-      transaction_type: "expense",
-      source_confidence: securityStatus === "trusted" ? "0.85" : "0.65",
+      transaction_type: classification.direction,
+      source_confidence: String(Math.min(classification.confidence, securityStatus === "trusted" ? 0.92 : 0.72)),
       external_transaction_id: sourceKey
     })
     .select("id")
@@ -131,7 +138,7 @@ export async function POST(request: Request) {
       source_key: sourceKey,
       evidence: { provider: "resend", security_status: securityStatus }
     }),
-    supabase.from("inbound_messages").update({ processing_status: "stored", parser_version: "resend-deterministic-1" }).eq("id", message.id),
+    supabase.from("inbound_messages").update({ processing_status: "stored", parser_version: "resend-ai-classifier-2" }).eq("id", message.id),
     activateAlias(supabase, alias.id)
   ]);
 
@@ -172,5 +179,11 @@ function parseBankNotification(value: string, rawDate?: string) {
   const amount = amountMatch[1].includes(",") ? amountMatch[1].replace(/\./g, "").replace(",", ".") : amountMatch[1].replace(/\./g, "");
   const merchantMatch = value.match(/(?:en|comercio|establecimiento)\s*[:\-]?\s*([^\n,.]{3,80})/i);
   const date = rawDate && !Number.isNaN(new Date(rawDate).getTime()) ? new Date(rawDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
-  return { amount, merchant: merchantMatch?.[1]?.trim() ?? "Movimiento bancario", date };
+  const normalized = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const direction = /abono|deposito|transferencia recibida|pago recibido|sueldo|remuneracion|reembolso|devolucion/.test(normalized)
+    ? "income" as const
+    : /cargo|compra|debito|retiro|comision|cobro/.test(normalized)
+      ? "expense" as const
+      : null;
+  return { amount, merchant: merchantMatch?.[1]?.trim() ?? (direction === "income" ? "Abono bancario" : "Movimiento bancario"), date, direction };
 }

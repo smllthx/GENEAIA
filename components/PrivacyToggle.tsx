@@ -19,9 +19,8 @@ export function PrivacyToggle({
       <Button variant={hidden ? "default" : "glass"} size="icon" onClick={onToggleHidden} aria-label="Modo privacidad">
         <EyeOff className="h-4 w-4" />
       </Button>
-      <Button variant={focusMode ? "default" : "glass"} onClick={onToggleFocus}>
+      <Button variant={focusMode ? "default" : "glass"} size="icon" onClick={onToggleFocus} aria-label="Modo concentración" title="Modo concentración">
         <ShieldCheck className="h-4 w-4" />
-        Focus
       </Button>
     </div>
   );

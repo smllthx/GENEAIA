@@ -39,24 +39,11 @@ const periodLabels: Record<ExpensePlan["period"], string> = {
   event: "Evento"
 };
 
-const defaultPlans: ExpensePlan[] = [
-  { id: "local-daily-food", name: "Comida diaria", amount: 9500, period: "daily", category: "Comida" },
-  { id: "local-weekly-transport", name: "Transporte semana", amount: 42000, period: "weekly", category: "Transporte" },
-  { id: "local-monthly-apps", name: "Apps y streaming", amount: 44990, period: "monthly", category: "Suscripciones" },
-  { id: "local-annual-insurance", name: "Seguro anual", amount: 180000, period: "annual", category: "Seguros" },
-  { id: "local-event-trip", name: "Viaje / evento", amount: 250000, period: "event", category: "Evento" }
-];
-
-const defaultDebts: DebtRow[] = [
-  { id: "local-debt-1", person_name: "Martina", type: "owed_to_me", amount: 42000, paid_amount: 0, due_date: "2026-07-20", status: "pending", notes: "Cena pendiente" },
-  { id: "local-debt-2", person_name: "Tarjeta crédito", type: "owed_by_me", amount: 185000, paid_amount: 70000, due_date: "2026-07-28", status: "partial", notes: "Cuota mensual" }
-];
-
 export function DebtBudgetPlanner() {
   const supabase = useMemo(() => createClient(), []);
   const [session, setSession] = useState<Session | null>(null);
-  const [plans, setPlans] = useState<ExpensePlan[]>(defaultPlans);
-  const [debts, setDebts] = useState<DebtRow[]>(defaultDebts);
+  const [plans, setPlans] = useState<ExpensePlan[]>([]);
+  const [debts, setDebts] = useState<DebtRow[]>([]);
   const [planDraft, setPlanDraft] = useState({ name: "", amount: "", period: "monthly", category: "" });
   const [debtDraft, setDebtDraft] = useState({ person: "", amount: "", type: "owed_by_me", due: "" });
   const [message, setMessage] = useState("");
@@ -78,44 +65,55 @@ export function DebtBudgetPlanner() {
         supabase!.from("debts").select("*").order("created_at", { ascending: false })
       ]);
 
-      if (expenseRows?.length) {
-        setPlans(expenseRows.map((row) => ({ ...row, amount: Number(row.amount ?? 0) })) as ExpensePlan[]);
-      }
-
-      if (debtRows?.length) {
-        setDebts(debtRows.map((row) => ({ ...row, amount: Number(row.amount ?? 0), paid_amount: Number(row.paid_amount ?? 0) })) as DebtRow[]);
-      }
+      setPlans((expenseRows ?? []).map((row) => ({ ...row, amount: Number(row.amount ?? 0) })) as ExpensePlan[]);
+      setDebts((debtRows ?? []).map((row) => ({ ...row, amount: Number(row.amount ?? 0), paid_amount: Number(row.paid_amount ?? 0) })) as DebtRow[]);
     }
 
     void load();
+  }, [session, supabase]);
+
+  useEffect(() => {
+    if (!supabase || !session) return;
+    const reload = () => window.dispatchEvent(new Event("wallet-plans-changed"));
+    const channel = supabase
+      .channel(`wallet-plans-${session.user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "expense_plans", filter: `user_id=eq.${session.user.id}` }, reload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "debts", filter: `user_id=eq.${session.user.id}` }, reload)
+      .subscribe();
+    const refresh = async () => {
+      const [{ data: expenseRows }, { data: debtRows }] = await Promise.all([
+        supabase.from("expense_plans").select("*").order("created_at", { ascending: false }),
+        supabase.from("debts").select("*").order("created_at", { ascending: false })
+      ]);
+      setPlans((expenseRows ?? []).map((row) => ({ ...row, amount: Number(row.amount ?? 0) })) as ExpensePlan[]);
+      setDebts((debtRows ?? []).map((row) => ({ ...row, amount: Number(row.amount ?? 0), paid_amount: Number(row.paid_amount ?? 0) })) as DebtRow[]);
+    };
+    window.addEventListener("wallet-plans-changed", refresh);
+    return () => {
+      window.removeEventListener("wallet-plans-changed", refresh);
+      void supabase.removeChannel(channel);
+    };
   }, [session, supabase]);
 
   async function addPlan() {
     const amount = Number(planDraft.amount);
     if (!planDraft.name || !amount || !planDraft.category) return;
 
-    const nextPlan: ExpensePlan = {
-      id: crypto.randomUUID(),
-      name: planDraft.name,
-      amount,
-      period: planDraft.period as ExpensePlan["period"],
-      category: planDraft.category
-    };
-
-    setPlans((current) => [nextPlan, ...current]);
-    setPlanDraft({ name: "", amount: "", period: "monthly", category: "" });
-
     if (supabase && session) {
-      await supabase.from("expense_plans").insert({
+      const { data, error } = await supabase.from("expense_plans").insert({
         user_id: session.user.id,
-        name: nextPlan.name,
-        amount: nextPlan.amount,
-        period: nextPlan.period,
-        category: nextPlan.category
-      });
-      setMessage("Gasto guardado en tu cuenta.");
-    } else {
-      setMessage("Gasto agregado en este dispositivo. Entra a tu cuenta para guardarlo en la nube.");
+        name: planDraft.name,
+        amount,
+        period: planDraft.period,
+        category: planDraft.category
+      }).select("*").single();
+      if (error || !data) {
+        setMessage("No se pudo guardar el gasto.");
+        return;
+      }
+      setPlans((current) => [{ ...data, amount: Number(data.amount) } as ExpensePlan, ...current.filter((item) => item.id !== data.id)]);
+      setPlanDraft({ name: "", amount: "", period: "monthly", category: "" });
+      setMessage("Gasto guardado.");
     }
   }
 
@@ -123,32 +121,23 @@ export function DebtBudgetPlanner() {
     const amount = Number(debtDraft.amount);
     if (!debtDraft.person || !amount) return;
 
-    const nextDebt: DebtRow = {
-      id: crypto.randomUUID(),
-      person_name: debtDraft.person,
-      type: debtDraft.type as DebtRow["type"],
-      amount,
-      paid_amount: 0,
-      due_date: debtDraft.due || null,
-      status: "pending"
-    };
-
-    setDebts((current) => [nextDebt, ...current]);
-    setDebtDraft({ person: "", amount: "", type: "owed_by_me", due: "" });
-
     if (supabase && session) {
-      await supabase.from("debts").insert({
+      const { data, error } = await supabase.from("debts").insert({
         user_id: session.user.id,
-        person_name: nextDebt.person_name,
-        type: nextDebt.type,
-        amount: nextDebt.amount,
+        person_name: debtDraft.person,
+        type: debtDraft.type,
+        amount,
         paid_amount: 0,
-        due_date: nextDebt.due_date,
-        status: nextDebt.status
-      });
-      setMessage("Deuda guardada en tu cuenta.");
-    } else {
-      setMessage("Deuda agregada en este dispositivo. Entra a tu cuenta para guardarla en la nube.");
+        due_date: debtDraft.due || null,
+        status: "pending"
+      }).select("*").single();
+      if (error || !data) {
+        setMessage("No se pudo guardar la deuda.");
+        return;
+      }
+      setDebts((current) => [{ ...data, amount: Number(data.amount), paid_amount: Number(data.paid_amount) } as DebtRow, ...current.filter((item) => item.id !== data.id)]);
+      setDebtDraft({ person: "", amount: "", type: "owed_by_me", due: "" });
+      setMessage("Deuda guardada.");
     }
   }
 
@@ -161,7 +150,7 @@ export function DebtBudgetPlanner() {
 
     setPlans((current) => current.map((item) => item.id === plan.id ? { ...item, name, amount } : item));
 
-    if (supabase && session && !plan.id.startsWith("local-")) {
+    if (supabase && session) {
       const { error } = await supabase.from("expense_plans").update({ name, amount }).eq("id", plan.id);
       setMessage(error ? error.message : "Gasto actualizado.");
     }
@@ -172,7 +161,7 @@ export function DebtBudgetPlanner() {
 
     setPlans((current) => current.filter((item) => item.id !== plan.id));
 
-    if (supabase && session && !plan.id.startsWith("local-")) {
+    if (supabase && session) {
       const { error } = await supabase.from("expense_plans").delete().eq("id", plan.id);
       setMessage(error ? error.message : "Gasto borrado.");
     }
@@ -189,7 +178,7 @@ export function DebtBudgetPlanner() {
 
     setDebts((current) => current.map((item) => item.id === debt.id ? { ...item, person_name: personName, amount, paid_amount: paidAmount } : item));
 
-    if (supabase && session && !debt.id.startsWith("local-")) {
+    if (supabase && session) {
       const { error } = await supabase
         .from("debts")
         .update({ person_name: personName, amount, paid_amount: paidAmount })
@@ -203,7 +192,7 @@ export function DebtBudgetPlanner() {
 
     setDebts((current) => current.filter((item) => item.id !== debt.id));
 
-    if (supabase && session && !debt.id.startsWith("local-")) {
+    if (supabase && session) {
       const { error } = await supabase.from("debts").delete().eq("id", debt.id);
       setMessage(error ? error.message : "Deuda borrada.");
     }
@@ -222,7 +211,7 @@ export function DebtBudgetPlanner() {
             <p className="text-sm font-semibold text-muted-foreground">Gastos por periodo</p>
             <h2 className="text-2xl font-black">Diario, semanal, mensual, anual y evento</h2>
           </div>
-          <Badge>{session ? "Guardado en nube" : "Modo local"}</Badge>
+          <Badge>Sincronizado</Badge>
         </div>
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
           {(Object.keys(periodLabels) as ExpensePlan["period"][]).map((period) => (
@@ -244,6 +233,7 @@ export function DebtBudgetPlanner() {
           <Button onClick={addPlan}><CalendarPlus className="h-4 w-4" />Agregar</Button>
         </div>
         <div className="mt-4 space-y-2">
+          {plans.length === 0 && <p className="rounded-[1.25rem] bg-white/55 p-4 text-sm text-muted-foreground dark:bg-white/8">Aún no has creado gastos planificados.</p>}
           {plans.slice(0, 8).map((plan) => (
             <div key={plan.id} className="flex items-center justify-between gap-3 rounded-[1.25rem] bg-white/55 p-3 dark:bg-white/8">
               <div className="min-w-0">
@@ -287,6 +277,7 @@ export function DebtBudgetPlanner() {
           </div>
         </div>
         <div className="mt-4 space-y-2">
+          {debts.length === 0 && <p className="rounded-[1.25rem] bg-white/55 p-4 text-sm text-muted-foreground dark:bg-white/8">Aún no has registrado deudas.</p>}
           {debts.slice(0, 6).map((debt) => (
             <div key={debt.id} className="rounded-[1.25rem] bg-white/55 p-3 dark:bg-white/8">
               <div className="flex items-center justify-between gap-3">

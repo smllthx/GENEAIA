@@ -9,7 +9,7 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
-export function InstallPWAButton() {
+export function InstallPWAButton({ compact = false }: { compact?: boolean }) {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);
 
@@ -42,17 +42,17 @@ export function InstallPWAButton() {
 
   if (isStandalone) {
     return (
-      <Button variant="glass" size="sm" disabled>
+      <Button variant="glass" size={compact ? "icon" : "sm"} disabled aria-label="Wallet instalada">
         <Download className="h-4 w-4" />
-        Instalada
+        {!compact && "Instalada"}
       </Button>
     );
   }
 
   return (
-    <Button variant="glass" size="sm" onClick={install} title="En iPhone: Compartir > Agregar a pantalla de inicio">
+    <Button variant="glass" size={compact ? "icon" : "sm"} onClick={install} title="En iPhone: Compartir > Agregar a pantalla de inicio" aria-label="Instalar Wallet">
       <Download className="h-4 w-4" />
-      Instalar
+      {!compact && "Instalar"}
     </Button>
   );
 }

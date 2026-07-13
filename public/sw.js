@@ -1,5 +1,6 @@
-const CACHE_NAME = "wallet-shell-v2";
+const CACHE_NAME = "wallet-shell-v4";
 const STATIC_ASSETS = [
+  "/offline.html",
   "/manifest.webmanifest",
   "/favicon-32.png",
   "/apple-touch-icon.png",
@@ -33,6 +34,11 @@ self.addEventListener("fetch", (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(request).then((cached) => cached || caches.match("/manifest.webmanifest")))
+      .catch(async () => {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+        if (request.mode === "navigate") return caches.match("/offline.html");
+        return Response.error();
+      })
   );
 });

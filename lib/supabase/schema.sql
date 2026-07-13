@@ -18,6 +18,7 @@ alter table public.users add column if not exists onboarding_completed boolean n
 alter table public.users add column if not exists onboarding_step integer not null default 1;
 alter table public.users add column if not exists email_provider text;
 alter table public.users add column if not exists notification_email text;
+alter table public.users add column if not exists ui_preferences jsonb not null default '{}'::jsonb;
 
 create table if not exists public.bank_connections (
   id uuid primary key default gen_random_uuid(),

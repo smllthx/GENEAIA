@@ -11,7 +11,7 @@ const severityClasses = {
   red: "from-red-500/26 to-rose-600/12 text-red-800 dark:text-red-100"
 };
 
-export function AIInsightCard({ insight }: { insight: AIInsight }) {
+export function AIInsightCard({ insight, onAction }: { insight: AIInsight; onAction?: () => void }) {
   return (
     <article className={`rounded-[1.5rem] bg-gradient-to-br p-4 ${severityClasses[insight.severity]}`}>
       <div className="flex items-start gap-3">
@@ -37,7 +37,7 @@ export function AIInsightCard({ insight }: { insight: AIInsight }) {
         </div>
       </div>
       <p className="mt-3 text-sm font-semibold">{insight.action}</p>
-      <Button className="mt-3 w-full" variant="glass" size="sm">
+      <Button className="mt-3 w-full" variant="glass" size="sm" onClick={onAction}>
         {insight.quick_button}
       </Button>
     </article>

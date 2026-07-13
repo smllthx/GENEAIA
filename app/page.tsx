@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   CalendarDays,
   CheckCircle2,
-  ChevronRight,
   CreditCard,
   Flame,
   Gauge,
@@ -23,11 +23,9 @@ import { AIInsightCard } from "@/components/AIInsightCard";
 import { AccountCard } from "@/components/AccountCard";
 import { AppleHealthMetricCard } from "@/components/AppleHealthMetricCard";
 import { BalanceCard } from "@/components/BalanceCard";
-import { CategoryDonut, TrendLineChart } from "@/components/Charts";
 import { FloatingTabBar } from "@/components/FloatingTabBar";
 import { FocusModePanel } from "@/components/FocusModePanel";
 import { GlassCard } from "@/components/GlassCard";
-import { HeatmapSpending } from "@/components/HeatmapSpending";
 import { InstallPWAButton } from "@/components/InstallPWAButton";
 import { LiquidBackground } from "@/components/LiquidBackground";
 import { MonthlyVisualSummary as MonthlyVisualSummaryGrid } from "@/components/MonthlyVisualSummary";
@@ -43,16 +41,15 @@ import { Progress } from "@/components/ui/progress";
 import { formatCurrency } from "@/lib/utils";
 import { TransactionItem } from "@/components/TransactionItem";
 import { AutomationPanel } from "@/components/AutomationPanel";
+import { AdaptiveSettings } from "@/components/AdaptiveSettings";
+import { useSyncedPreferences } from "@/hooks/use-synced-preferences";
 import type { Account, BalancePoint, CategoryPoint, HeatmapDay, Transaction } from "@/lib/types";
 
-const categoryColors = ["#0A84FF", "#34C759", "#FF9F0A", "#FF375F", "#AF52DE", "#64D2FF", "#FFD60A", "#8E8E93"];
+const CategoryDonut = dynamic(() => import("@/components/Charts").then((module) => module.CategoryDonut), { ssr: false });
+const TrendLineChart = dynamic(() => import("@/components/Charts").then((module) => module.TrendLineChart), { ssr: false });
+const HeatmapSpending = dynamic(() => import("@/components/HeatmapSpending").then((module) => module.HeatmapSpending), { ssr: false });
 
-const secondaryItems = [
-  { label: "Deudas", tab: "presupuesto" },
-  { label: "Suscripciones", tab: "presupuesto" },
-  { label: "Ajustes", tab: "inicio" },
-  { label: "Seguridad", tab: "automatizacion" }
-];
+const categoryColors = ["#0A84FF", "#34C759", "#FF9F0A", "#FF375F", "#AF52DE", "#64D2FF", "#FFD60A", "#8E8E93"];
 
 function buildCategoryData(transactions: Transaction[]): CategoryPoint[] {
   const totalsByCategory = transactions
@@ -136,46 +133,90 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState("automatizacion");
   const [hidden, setHidden] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
   const [hideSections, setHideSections] = useState(false);
   const [query, setQuery] = useState("");
   const [liveAccounts, setLiveAccounts] = useState<Account[]>([]);
   const [liveTransactions, setLiveTransactions] = useState<Transaction[]>([]);
   const [liveMode, setLiveMode] = useState(false);
+  const [financialLimits, setFinancialLimits] = useState({ daily: 0, weekly: 0, monthly: 0 });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [systemDark, setSystemDark] = useState(false);
+  const { value: adaptivePreferences, update: updateAdaptivePreferences, syncState } = useSyncedPreferences();
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const sync = () => setSystemDark(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  const darkMode = adaptivePreferences.theme === "dark" || (adaptivePreferences.theme === "auto" && systemDark);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", darkMode);
+    root.dataset.textSize = adaptivePreferences.textSize;
+    root.dataset.density = adaptivePreferences.density;
+    root.dataset.contrast = adaptivePreferences.highContrast ? "high" : "standard";
+    root.dataset.reduceMotion = adaptivePreferences.reduceMotion ? "true" : "false";
+  }, [adaptivePreferences, darkMode]);
+
+  const handleLiveData = useCallback(({ accounts, transactions, liveMode: nextLiveMode, budgets }: { accounts: Account[]; transactions: Transaction[]; liveMode: boolean; budgets: { daily: number; weekly: number; monthly: number } }) => {
+    setLiveAccounts(accounts);
+    setLiveTransactions(transactions);
+    setLiveMode(nextLiveMode);
+    setFinancialLimits(budgets);
+  }, []);
+
+  const navigate = useCallback((tab: string) => {
+    setFocusMode(false);
+    setActiveTab(tab);
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: adaptivePreferences.reduceMotion ? "auto" : "smooth" }));
+  }, [adaptivePreferences.reduceMotion]);
 
   const activeAccounts = liveAccounts;
   const activeTransactions = liveTransactions;
   const activeBalance = activeAccounts
     .filter((account) => !account.is_hidden && !account.exclude_from_total)
     .reduce((sum, account) => sum + account.balance, 0);
+  const monthPrefix = new Date().toISOString().slice(0, 7);
   const activeMonthlySpent = activeTransactions
-    .filter((transaction) => transaction.amount < 0)
+    .filter((transaction) => transaction.amount < 0 && transaction.date.startsWith(monthPrefix))
     .reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
 
   const accountsById = useMemo(() => Object.fromEntries(activeAccounts.map((account) => [account.id, account])), [activeAccounts]);
   const today = new Date();
   const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
   const daysLeft = Math.max(1, daysInMonth - today.getDate() + 1);
-  const availableToday = activeBalance > 0 ? Math.floor(activeBalance / daysLeft) : 0;
-  const availableWeek = activeBalance > 0 ? Math.floor(activeBalance / 4) : 0;
+  const todayPrefix = today.toISOString().slice(0, 10);
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setDate(today.getDate() - 6);
+  const spentToday = activeTransactions.filter((transaction) => transaction.amount < 0 && transaction.date.startsWith(todayPrefix)).reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
+  const spentThisWeek = activeTransactions.filter((transaction) => transaction.amount < 0 && new Date(transaction.date) >= sevenDaysAgo).reduce((sum, transaction) => sum + Math.abs(transaction.amount), 0);
+  const monthlyRemaining = financialLimits.monthly > 0 ? Math.max(0, financialLimits.monthly - activeMonthlySpent) : activeBalance;
+  const dailyAllowance = financialLimits.daily > 0 ? Math.max(0, financialLimits.daily - spentToday) : monthlyRemaining > 0 ? Math.floor(monthlyRemaining / daysLeft) : 0;
+  const weeklyAllowance = financialLimits.weekly > 0 ? Math.max(0, financialLimits.weekly - spentThisWeek) : activeBalance > 0 ? Math.floor(activeBalance / 4) : 0;
+  const availableToday = Math.max(0, Math.min(activeBalance, monthlyRemaining, dailyAllowance));
+  const availableWeek = Math.max(0, Math.min(activeBalance, monthlyRemaining, weeklyAllowance));
   const savedThisMonth = activeAccounts
     .filter((account) => account.type === "savings")
     .reduce((sum, account) => sum + account.balance, 0);
   const categoryChart = useMemo(() => buildCategoryData(activeTransactions), [activeTransactions]);
   const balanceChart = useMemo(() => buildBalanceTrend(activeTransactions, activeBalance), [activeTransactions, activeBalance]);
   const heatmap = useMemo(() => buildHeatmap(activeTransactions), [activeTransactions]);
-  const monthlyProgress = 0;
+  const monthlyProgress = financialLimits.monthly > 0 ? Math.min(100, Math.round((activeMonthlySpent / financialLimits.monthly) * 100)) : 0;
   const filteredTransactions = activeTransactions.filter((transaction) =>
     [transaction.merchant, transaction.category, transaction.description].join(" ").toLowerCase().includes(query.toLowerCase())
   );
   const urgentInsight = emptyInsight;
 
   return (
-    <main className={darkMode ? "dark" : ""}>
-      <LiquidBackground focusMode={focusMode} />
+    <main className="min-h-dvh">
+      <LiquidBackground focusMode={focusMode || adaptivePreferences.reduceMotion} />
       <AuthGate>
-      <div className="mx-auto min-h-screen w-full max-w-7xl overflow-x-hidden px-4 pb-28 pt-4 sm:px-6 lg:px-8">
-        <header className="sticky top-3 z-30 mb-5 flex items-center justify-between gap-3 rounded-full border border-white/40 bg-white/60 px-3 py-2 shadow-sm backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/45">
+      <div className="app-shell mx-auto min-h-dvh w-full max-w-7xl overflow-x-hidden px-4 pb-28 sm:px-6 lg:px-8">
+        <header className="app-header sticky z-30 mb-4 flex items-center justify-between gap-2 rounded-3xl border border-white/40 bg-white/70 px-2.5 py-2 shadow-sm backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/60 sm:rounded-full sm:px-3">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[1.05rem] bg-black shadow-glow ring-1 ring-white/35">
               <img src="/icons/wallet-icon-192.png" alt="Wallet" className="h-full w-full object-cover" />
@@ -186,11 +227,15 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <InstallPWAButton />
+            <span className="hidden sm:block"><InstallPWAButton compact /></span>
+            <Button variant="glass" size="icon" onClick={() => setSettingsOpen(true)} aria-label="Personalizar experiencia">
+              <SlidersHorizontal className="h-4 w-4" />
+            </Button>
             <Button
               variant="glass"
               size="icon"
-              onClick={() => setDarkMode((value) => !value)}
+              className="hidden sm:inline-flex"
+              onClick={() => updateAdaptivePreferences({ ...adaptivePreferences, theme: darkMode ? "light" : "dark" })}
               aria-label="Cambiar modo claro oscuro"
             >
               {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -204,28 +249,9 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="mb-5 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
-          <GlassCard className="p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge>Bienvenido</Badge>
-              <Badge>Captura principal: correo</Badge>
-              <Badge>Moneda principal: CLP</Badge>
-              <Badge>PWA instalable</Badge>
-            </div>
-            <p className="mt-3 max-w-3xl text-sm font-medium text-muted-foreground">
-              Wallet recibe los avisos que reenvias desde tu correo y los deja listos para revisar. No necesita acceso a tu bandeja ni claves bancarias.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {["CLP", "USD", "EUR"].map((currency) => (
-                <Badge key={currency} className={currency === "CLP" ? "bg-sky-500 text-white" : ""}>
-                  {currency}
-                </Badge>
-              ))}
-            </div>
-          </GlassCard>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={() => setActiveTab("automatizacion")}><Mail className="h-4 w-4" />Configurar correo</Button>
-          </div>
+        <section className="mb-5 flex items-center justify-between gap-3 rounded-2xl bg-white/45 p-3 backdrop-blur-md dark:bg-white/5">
+          <div className="min-w-0"><p className="font-black">Captura por correo</p><p className="truncate text-xs text-muted-foreground">{liveTransactions.length > 0 ? `${liveTransactions.length} movimientos sincronizados` : "Enlaza tus avisos bancarios"}</p></div>
+          <Button className="shrink-0" onClick={() => navigate("automatizacion")}><Mail className="h-4 w-4" /><span className="hidden sm:inline">Configurar</span></Button>
         </section>
 
         {focusMode ? (
@@ -240,11 +266,7 @@ export default function Home() {
           <>
             <RealBankingPanel
               showPanel={false}
-              onLiveData={({ accounts, transactions, liveMode: nextLiveMode }) => {
-                setLiveAccounts(accounts);
-                setLiveTransactions(transactions);
-                setLiveMode(nextLiveMode);
-              }}
+              onLiveData={handleLiveData}
             />
             {activeTab === "inicio" && (
               <Dashboard
@@ -263,7 +285,9 @@ export default function Home() {
                 categoryChart={categoryChart}
                 balanceChart={balanceChart}
                 liveMode={liveMode}
-                onNavigate={setActiveTab}
+                onNavigate={navigate}
+                sectionOrder={adaptivePreferences.sectionOrder}
+                hiddenSections={adaptivePreferences.hiddenSections}
               />
             )}
             {activeTab === "movimientos" && (
@@ -281,7 +305,8 @@ export default function Home() {
           </>
         )}
       </div>
-      <FloatingTabBar active={activeTab} onChange={setActiveTab} />
+      <FloatingTabBar active={activeTab} onChange={navigate} order={adaptivePreferences.tabOrder} />
+      <AdaptiveSettings open={settingsOpen} value={adaptivePreferences} onChange={updateAdaptivePreferences} onClose={() => setSettingsOpen(false)} syncState={syncState} />
       </AuthGate>
     </main>
   );
@@ -303,7 +328,9 @@ function Dashboard({
   categoryChart,
   balanceChart,
   liveMode,
-  onNavigate
+  onNavigate,
+  sectionOrder,
+  hiddenSections
 }: {
   hidden: boolean;
   onToggleHidden: () => void;
@@ -321,12 +348,73 @@ function Dashboard({
   balanceChart: BalancePoint[];
   liveMode: boolean;
   onNavigate: (tab: string) => void;
+  sectionOrder: string[];
+  hiddenSections: string[];
 }) {
+  const dailyAverage = transactions.length > 0 ? Math.round(monthlySpent / Math.max(1, new Date().getDate())) : 0;
+  const topCategory = categoryChart[0];
+  const insights = transactions.length > 0 ? [
+    {
+      ...emptyInsight,
+      id: "spending-pace",
+      title: dailyAverage > availableToday && availableToday > 0 ? "Ritmo sobre tu disponible" : "Ritmo bajo control",
+      message: `Promedio diario ${formatCurrency(dailyAverage)}. Disponible estimado ${formatCurrency(availableToday)}.`,
+      severity: dailyAverage > availableToday && availableToday > 0 ? "orange" as const : "green" as const,
+      type: "presupuesto" as const,
+      urgency: dailyAverage > availableToday && availableToday > 0 ? 4 : 1,
+      action: "Revisa los cargos recientes y ajusta el limite diario.",
+      quick_button: "Ver movimientos",
+      estimated_impact: Math.max(0, dailyAverage - availableToday)
+    },
+    {
+      ...emptyInsight,
+      id: "top-category",
+      title: topCategory ? `${topCategory.name} lidera tus gastos` : "Categorias en orden",
+      message: topCategory ? `Acumula ${formatCurrency(topCategory.value)} este mes.` : "Aun no hay una categoria dominante.",
+      severity: "blue" as const,
+      type: "habito" as const,
+      urgency: 2,
+      action: "Compara sus movimientos antes de cambiar tu presupuesto.",
+      quick_button: "Revisar categoria",
+      estimated_impact: topCategory?.value ?? 0
+    }
+  ] : [emptyInsight];
+
+  const asideSections: Record<string, React.ReactNode> = {
+    resumen: (
+      <MonthVisualSummary
+        monthlyProgress={monthlyProgress}
+        hidden={hidden}
+        monthlySpent={monthlySpent}
+        availableWeek={availableWeek}
+        savedThisMonth={savedThisMonth}
+        categoryChart={categoryChart}
+        liveMode={liveMode}
+      />
+    ),
+    presupuesto: (
+      <GlassCard>
+        <div className="mb-3 flex items-center justify-between gap-3"><h2 className="text-xl font-black">Presupuesto mensual</h2><Badge>{monthlyProgress}%</Badge></div>
+        <Progress value={monthlyProgress} />
+        <Button variant="glass" className="mt-4 w-full" onClick={() => onNavigate("presupuesto")}>Administrar presupuesto</Button>
+      </GlassCard>
+    ),
+    tendencia: (
+      <GlassCard><h2 className="text-xl font-black">Tendencia de saldo</h2>{balanceChart.length > 1 ? <TrendLineChart data={balanceChart} /> : <EmptyState title="Sin tendencia" copy="Necesitas mas movimientos." />}</GlassCard>
+    ),
+    categorias: (
+      <GlassCard>
+        <h2 className="text-xl font-black">Categorias</h2>
+        {categoryChart.length > 0 ? <><CategoryDonut data={categoryChart} /><div className="grid grid-cols-2 gap-2">{categoryChart.map((category) => <div key={category.name} className="flex min-w-0 items-center gap-2 text-sm"><span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: category.color }} /><span className="truncate">{category.name}</span></div>)}</div></> : <EmptyState title="Sin categorias" copy="Apareceran al recibir movimientos." />}
+      </GlassCard>
+    )
+  };
+
   return (
     <div className="grid min-w-0 gap-5 lg:grid-cols-[1.05fr_0.95fr]">
       <div className="min-w-0 space-y-5">
         <BalanceCard balance={totalBalance} hidden={hidden} onToggleHidden={onToggleHidden} />
-        <TodaySummaryCard availableToday={availableToday} hidden={hidden} />
+        <TodaySummaryCard availableToday={availableToday} hidden={hidden} onReview={() => onNavigate("movimientos")} onSave={() => onNavigate("presupuesto")} onPayments={() => onNavigate("presupuesto")} />
         <GlassCard>
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
@@ -356,13 +444,7 @@ function Dashboard({
               {hideSections ? "Mostrar" : "Ocultar"}
             </Button>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {transactions.length > 0 ? (
-              <EmptyState title="Insights en preparación" copy="Wallet usará tus movimientos reales para generar alertas, sin datos inventados." />
-            ) : (
-              <EmptyState title="Sin insights todavia" copy="Reenvia avisos bancarios para activar alertas inteligentes." />
-            )}
-          </div>
+          <div className="grid gap-3 sm:grid-cols-2">{insights.map((insight) => <AIInsightCard key={insight.id} insight={insight} onAction={() => onNavigate(insight.id === "spending-pace" ? "movimientos" : insight.id === "top-category" ? "movimientos" : "automatizacion")} />)}</div>
         </GlassCard>
         <GlassCard>
           <div className="mb-4 flex items-center justify-between">
@@ -383,83 +465,12 @@ function Dashboard({
                 />
               ))
             ) : (
-              <EmptyState title="Sin movimientos" copy="Registra un pago o sincroniza un banco para ver tu timeline." />
+              <EmptyState title="Sin movimientos" copy="Enlaza tu correo para comenzar." />
             )}
           </div>
         </GlassCard>
       </div>
-      <aside className="min-w-0 space-y-5">
-        <MonthVisualSummary
-          monthlyProgress={monthlyProgress}
-          hidden={hidden}
-          monthlySpent={monthlySpent}
-          availableWeek={availableWeek}
-          savedThisMonth={savedThisMonth}
-          categoryChart={categoryChart}
-          liveMode={liveMode}
-        />
-        <GlassCard>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-xl font-black">Presupuesto mensual</h2>
-            <Badge className={monthlyProgress > 80 ? "text-orange-600" : ""}>{monthlyProgress}% usado</Badge>
-          </div>
-          <Progress value={monthlyProgress} />
-          <p className="mt-3 text-sm text-muted-foreground">
-            Define un presupuesto mensual para calcular cuánto queda por gastar.
-          </p>
-        </GlassCard>
-        <GlassCard>
-          <h2 className="text-xl font-black">Tendencia de saldo</h2>
-          {balanceChart.length > 1 ? <TrendLineChart data={balanceChart} /> : <EmptyState title="Sin tendencia" copy="Necesitas más movimientos para calcular una tendencia." />}
-        </GlassCard>
-        <GlassCard>
-          <h2 className="text-xl font-black">Categorías</h2>
-          {categoryChart.length > 0 ? (
-            <>
-              <CategoryDonut data={categoryChart} />
-              <div className="grid grid-cols-2 gap-2">
-                {categoryChart.map((category) => (
-                  <div key={category.name} className="flex items-center gap-2 text-sm">
-                    <span className="h-3 w-3 rounded-full" style={{ backgroundColor: category.color }} />
-                    <span className="truncate">{category.name}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <EmptyState title="Sin categorías" copy="Registra gastos para ver porcentajes por categoría." />
-          )}
-        </GlassCard>
-        <GlassCard>
-          <h2 className="text-xl font-black">Semáforo financiero</h2>
-          <div className="mt-4 grid gap-2">
-            {[
-              ["Saldo", "Vas bien", "bg-emerald-400"],
-              ["Comida", "Atención", "bg-yellow-400"],
-              ["Pagos próximos", "Urgencia", "bg-red-500"]
-            ].map(([label, value, color]) => (
-              <div key={label} className="flex items-center justify-between rounded-2xl bg-white/55 p-3 dark:bg-white/8">
-                <span className="font-semibold">{label}</span>
-                <span className="flex items-center gap-2 text-sm font-bold">
-                  <span className={`h-3 w-3 rounded-full ${color}`} />
-                  {value}
-                </span>
-              </div>
-            ))}
-          </div>
-        </GlassCard>
-        <GlassCard>
-          <h2 className="text-xl font-black">Menú secundario</h2>
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            {secondaryItems.map((item) => (
-              <Button key={item.label} variant="glass" className="justify-between" onClick={() => onNavigate(item.tab)}>
-                {item.label}
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            ))}
-          </div>
-        </GlassCard>
-      </aside>
+      <aside className="min-w-0 space-y-5">{sectionOrder.map((section) => hiddenSections.includes(section) ? null : <div key={section}>{asideSections[section]}</div>)}</aside>
     </div>
   );
 }
