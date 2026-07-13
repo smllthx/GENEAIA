@@ -14,6 +14,10 @@ alter table public.users add column if not exists daily_budget numeric(14,2) not
 alter table public.users add column if not exists event_name text;
 alter table public.users add column if not exists event_budget numeric(14,2) not null default 0;
 alter table public.users add column if not exists updated_at timestamptz not null default now();
+alter table public.users add column if not exists onboarding_completed boolean not null default false;
+alter table public.users add column if not exists onboarding_step integer not null default 1;
+alter table public.users add column if not exists email_provider text;
+alter table public.users add column if not exists notification_email text;
 
 create table if not exists public.bank_connections (
   id uuid primary key default gen_random_uuid(),

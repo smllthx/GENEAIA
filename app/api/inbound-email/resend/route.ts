@@ -68,7 +68,8 @@ export async function POST(request: Request) {
         provider: "resend",
         resend_email_id: event.data.email_id,
         attachment_count: email.attachments.length,
-        authentication_passes: authenticationPasses
+        authentication_passes: authenticationPasses,
+        forwarding_confirmation_url: extractForwardingConfirmationUrl(`${email.text ?? ""}\n${email.html ?? ""}`)
       }
     })
     .select("id")
@@ -147,6 +148,22 @@ function extractEmailAddress(value: string) {
 
 function stripHtml(value: string) {
   return value.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function extractForwardingConfirmationUrl(value: string) {
+  const urls = value.match(/https:\/\/[^\s"'<>]+/gi) ?? [];
+  for (const rawUrl of urls) {
+    const decoded = rawUrl.replace(/&amp;/g, "&");
+    try {
+      const url = new URL(decoded);
+      if (["mail-settings.google.com", "accounts.google.com", "outlook.live.com", "account.live.com"].includes(url.hostname)) {
+        return url.toString();
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
 }
 
 function parseBankNotification(value: string, rawDate?: string) {

@@ -5,13 +5,10 @@ import type { Session } from "@supabase/supabase-js";
 import {
   AlertTriangle,
   CheckCircle2,
-  Copy,
   FileCheck2,
   FileText,
-  Inbox,
   Link2,
   Loader2,
-  MailCheck,
   RefreshCw,
   ShieldCheck,
   Upload
@@ -23,6 +20,7 @@ import { GlassCard } from "@/components/GlassCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { EmailSetupGuide } from "@/components/EmailSetupGuide";
 
 type EmailAlias = {
   id: string;
@@ -75,6 +73,15 @@ type InboundStatus = {
   checks: { domain: boolean; apiKey: boolean; webhookSecret: boolean; serviceRole: boolean };
 };
 
+type InboundMessage = {
+  id: string;
+  sender: string;
+  subject: string | null;
+  processing_status: string;
+  received_at: string;
+  metadata: { forwarding_confirmation_url?: string | null } | null;
+};
+
 const statusCopy: Record<string, string> = {
   received: "Recibimos tu cartola",
   extracting_text: "Extrayendo movimientos",
@@ -95,6 +102,7 @@ export function AutomationPanel({ accounts }: { accounts: Account[] }) {
   const [statements, setStatements] = useState<Statement[]>([]);
   const [matches, setMatches] = useState<Reconciliation[]>([]);
   const [inboundStatus, setInboundStatus] = useState<InboundStatus | null>(null);
+  const [inboundMessages, setInboundMessages] = useState<InboundMessage[]>([]);
   const [selectedAccount, setSelectedAccount] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -109,19 +117,22 @@ export function AutomationPanel({ accounts }: { accounts: Account[] }) {
   const loadAutomation = useCallback(async () => {
     if (!session) return;
     const headers = await authHeaders();
-    const [aliasResponse, statementResponse, matchResponse] = await Promise.all([
+    const [aliasResponse, statementResponse, matchResponse, messageResponse] = await Promise.all([
       fetch("/api/email-aliases", { headers }),
       fetch("/api/statements", { headers }),
-      fetch("/api/reconciliation", { headers })
+      fetch("/api/reconciliation", { headers }),
+      fetch("/api/inbound-email/messages", { headers })
     ]);
-    const [aliasJson, statementJson, matchJson] = await Promise.all([
+    const [aliasJson, statementJson, matchJson, messageJson] = await Promise.all([
       aliasResponse.json(),
       statementResponse.json(),
-      matchResponse.json()
+      matchResponse.json(),
+      messageResponse.json()
     ]);
     setAliases(aliasJson.aliases ?? []);
     setStatements(statementJson.statements ?? []);
     setMatches(matchJson.matches ?? []);
+    setInboundMessages(messageJson.messages ?? []);
   }, [authHeaders, session]);
 
   useEffect(() => {
@@ -210,55 +221,32 @@ export function AutomationPanel({ accounts }: { accounts: Account[] }) {
     }
   }
 
+  async function saveEmailProvider(provider: string) {
+    if (!supabase || !session) return;
+    await supabase.from("users").update({
+      email_provider: provider,
+      notification_email: session.user.email ?? null,
+      updated_at: new Date().toISOString()
+    }).eq("id", session.user.id);
+  }
+
   const activeAlias = aliases.find((alias) => alias.status !== "revoked");
-  const aliasNeedsUpgrade = Boolean(activeAlias && inboundStatus?.configured && !activeAlias.address.endsWith(`@${inboundStatus.domain}`));
+  const guideAlias = activeAlias && inboundStatus?.configured && activeAlias.address.endsWith(`@${inboundStatus.domain}`) ? activeAlias : undefined;
+  const confirmationUrl = inboundMessages.find((item) => item.metadata?.forwarding_confirmation_url)?.metadata?.forwarding_confirmation_url;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[0.86fr_1.14fr]">
       <div className="space-y-5">
-        <GlassCard>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-muted-foreground">Correos bancarios</p>
-              <h2 className="text-2xl font-black">Alias privado</h2>
-            </div>
-            <Badge><ShieldCheck className="mr-1 h-3 w-3" />Sin claves</Badge>
-          </div>
-          <p className="mt-3 text-sm text-muted-foreground">
-            Reenvia solo las notificaciones bancarias. Wallet no necesita acceso a tu bandeja de entrada.
-          </p>
-          <div className={`mt-3 rounded-2xl p-3 text-sm font-semibold ${inboundStatus?.configured ? "bg-emerald-400/12 text-emerald-700 dark:text-emerald-200" : "bg-orange-400/12 text-orange-700 dark:text-orange-200"}`}>
-            {inboundStatus?.configured
-              ? `Recepcion activa con ${inboundStatus.provider} en ${inboundStatus.domain}.`
-              : "Recepcion pendiente: falta conectar Resend en Vercel."}
-          </div>
-          {activeAlias ? (
-            <div className="mt-4 rounded-2xl bg-white/60 p-4 dark:bg-white/8">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate font-black">{activeAlias.address}</p>
-                  <p className="text-xs text-muted-foreground">{statusCopy[activeAlias.status] ?? activeAlias.status}</p>
-                </div>
-                <Button variant="glass" size="icon" aria-label="Copiar alias" onClick={() => navigator.clipboard.writeText(activeAlias.address)}>
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-              <Button className="mt-3 w-full" variant="glass" onClick={() => startVerification(activeAlias.id)} disabled={loading || activeAlias.status === "active"}>
-                <MailCheck className="h-4 w-4" />
-                {activeAlias.status === "active" ? "Reenvio verificado" : "Comprobar reenvio"}
-              </Button>
-              {aliasNeedsUpgrade && (
-                <Button className="mt-2 w-full" onClick={createAlias} disabled={loading}>
-                  <RefreshCw className="h-4 w-4" />Crear alias real
-                </Button>
-              )}
-            </div>
-          ) : (
-            <Button className="mt-4 w-full" onClick={createAlias} disabled={loading || !inboundStatus?.configured}>
-              <Inbox className="h-4 w-4" />{inboundStatus?.configured ? "Crear mi alias" : "Falta activar recepcion"}
-            </Button>
-          )}
-        </GlassCard>
+        <EmailSetupGuide
+          status={inboundStatus}
+          alias={guideAlias}
+          loading={loading}
+          confirmationUrl={confirmationUrl}
+          onCreateAlias={createAlias}
+          onStartVerification={startVerification}
+          onRefresh={loadAutomation}
+          onSaveProvider={saveEmailProvider}
+        />
 
         <GlassCard>
           <div className="flex items-start gap-3">

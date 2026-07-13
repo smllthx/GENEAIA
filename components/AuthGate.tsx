@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Fingerprint, KeyRound, Loader2, Mail, MessageSquareText } from "lucide-react";
+import { ArrowLeft, ArrowRight, Building2, CheckCircle2, CircleDollarSign, Fingerprint, KeyRound, Loader2, Mail, MessageSquareText, UserRound } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { getSiteUrl } from "@/lib/site-url";
@@ -10,6 +10,7 @@ import { InstallPWAButton } from "@/components/InstallPWAButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 
 type ProfileDraft = {
   name: string;
@@ -70,6 +71,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [codeSent, setCodeSent] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [setupStep, setSetupStep] = useState(1);
 
   useEffect(() => {
     if (!supabase) {
@@ -231,6 +233,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
         monthly_budget: Number(profile.monthly_budget),
         event_name: profile.event_name,
         event_budget: Number(profile.event_budget || 0),
+        onboarding_completed: true,
+        onboarding_step: 4,
         updated_at: new Date().toISOString()
       },
       { onConflict: "id" }
@@ -351,31 +355,78 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (!profileReady) {
     return (
       <AuthShell>
-        <GlassCard glow className="w-full max-w-4xl">
-          <div className="flex items-center gap-2">
-            <Badge>Datos personales</Badge>
-            <Badge>Presupuesto inicial</Badge>
+        <GlassCard glow className="w-full max-w-2xl">
+          <div className="flex items-center justify-between gap-3">
+            <Badge>Configuracion inicial</Badge>
+            <span className="text-xs font-bold text-muted-foreground">Paso {setupStep} de 4</span>
           </div>
-          <h1 className="mt-5 text-3xl font-black">Configura tu Wallet</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Estos datos permiten calcular cuánto puedes gastar al día, semana y mes.
-          </p>
-          <div className="mt-5 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            <Input value={profile.name} onChange={(event) => setProfile((draft) => ({ ...draft, name: event.target.value }))} placeholder="Nombre" />
-            <Input value={profile.country} onChange={(event) => setProfile((draft) => ({ ...draft, country: event.target.value }))} placeholder="País" />
-            <Input value={profile.currency} onChange={(event) => setProfile((draft) => ({ ...draft, currency: event.target.value.toUpperCase() }))} placeholder="Moneda, ej. CLP" />
-            <Input value={profile.main_bank} onChange={(event) => setProfile((draft) => ({ ...draft, main_bank: event.target.value }))} placeholder="Banco que usas" />
-            <Input value={profile.daily_budget} onChange={(event) => setProfile((draft) => ({ ...draft, daily_budget: event.target.value }))} placeholder="Presupuesto diario" inputMode="numeric" />
-            <Input value={profile.weekly_budget} onChange={(event) => setProfile((draft) => ({ ...draft, weekly_budget: event.target.value }))} placeholder="Presupuesto semanal" inputMode="numeric" />
-            <Input value={profile.monthly_budget} onChange={(event) => setProfile((draft) => ({ ...draft, monthly_budget: event.target.value }))} placeholder="Presupuesto mensual" inputMode="numeric" />
-            <Input value={profile.event_name} onChange={(event) => setProfile((draft) => ({ ...draft, event_name: event.target.value }))} placeholder="Evento opcional" />
-            <Input value={profile.event_budget} onChange={(event) => setProfile((draft) => ({ ...draft, event_budget: event.target.value }))} placeholder="Presupuesto evento" inputMode="numeric" />
-          </div>
+          <Progress className="mt-3" value={setupStep * 25} />
+
+          {setupStep === 1 && (
+            <div className="mt-6">
+              <UserRound className="h-9 w-9 text-sky-500" />
+              <h1 className="mt-4 text-3xl font-black">Partamos por ti</h1>
+              <p className="mt-2 text-sm text-muted-foreground">Usamos estos datos para mostrar montos y fechas correctamente.</p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <Input value={profile.name} onChange={(event) => setProfile((draft) => ({ ...draft, name: event.target.value }))} placeholder="Tu nombre" autoComplete="name" />
+                <Input value={profile.country} onChange={(event) => setProfile((draft) => ({ ...draft, country: event.target.value }))} placeholder="Pais" />
+                <select className="h-11 w-full rounded-full border border-white/40 bg-white/60 px-4 text-sm dark:bg-slate-900/80 sm:col-span-2" value={profile.currency} onChange={(event) => setProfile((draft) => ({ ...draft, currency: event.target.value }))}>
+                  <option value="CLP">Peso chileno (CLP)</option>
+                  <option value="USD">Dolar estadounidense (USD)</option>
+                  <option value="EUR">Euro (EUR)</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {setupStep === 2 && (
+            <div className="mt-6">
+              <Building2 className="h-9 w-9 text-indigo-500" />
+              <h1 className="mt-4 text-3xl font-black">¿Que banco usas?</h1>
+              <p className="mt-2 text-sm text-muted-foreground">Esto adapta las instrucciones de correo. No te pediremos la clave del banco.</p>
+              <select className="mt-5 h-12 w-full rounded-full border border-white/40 bg-white/60 px-4 text-sm dark:bg-slate-900/80" value={profile.main_bank} onChange={(event) => setProfile((draft) => ({ ...draft, main_bank: event.target.value }))}>
+                <option value="">Selecciona tu banco principal</option>
+                {["Banco de Chile", "Santander Chile", "BancoEstado", "BCI", "Scotiabank Chile", "Itau Chile", "Banco Falabella", "Otro"].map((bank) => <option key={bank} value={bank}>{bank}</option>)}
+              </select>
+              <p className="mt-4 rounded-2xl bg-emerald-400/12 p-3 text-sm font-semibold text-emerald-700 dark:text-emerald-200">La conexion sera siempre de lectura. Wallet no puede mover fondos.</p>
+            </div>
+          )}
+
+          {setupStep === 3 && (
+            <div className="mt-6">
+              <CircleDollarSign className="h-9 w-9 text-emerald-500" />
+              <h1 className="mt-4 text-3xl font-black">Define tus limites</h1>
+              <p className="mt-2 text-sm text-muted-foreground">Wallet calculara cuanto puedes gastar sin salirte de tu plan.</p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <Input value={profile.daily_budget} onChange={(event) => setProfile((draft) => ({ ...draft, daily_budget: event.target.value.replace(/\D/g, "") }))} placeholder="Diario" inputMode="numeric" />
+                <Input value={profile.weekly_budget} onChange={(event) => setProfile((draft) => ({ ...draft, weekly_budget: event.target.value.replace(/\D/g, "") }))} placeholder="Semanal" inputMode="numeric" />
+                <Input value={profile.monthly_budget} onChange={(event) => setProfile((draft) => ({ ...draft, monthly_budget: event.target.value.replace(/\D/g, "") }))} placeholder="Mensual" inputMode="numeric" />
+                <Input className="sm:col-span-2" value={profile.event_name} onChange={(event) => setProfile((draft) => ({ ...draft, event_name: event.target.value }))} placeholder="Evento opcional, ej. viaje" />
+                <Input value={profile.event_budget} onChange={(event) => setProfile((draft) => ({ ...draft, event_budget: event.target.value.replace(/\D/g, "") }))} placeholder="Monto evento" inputMode="numeric" />
+              </div>
+            </div>
+          )}
+
+          {setupStep === 4 && (
+            <div className="mt-6 text-center">
+              <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-500" />
+              <h1 className="mt-4 text-3xl font-black">Tu Wallet esta lista</h1>
+              <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">Al entrar te guiaremos para crear una cuenta, enlazar tus correos bancarios y comprobar que los movimientos llegan correctamente.</p>
+              <div className="mx-auto mt-5 grid max-w-md gap-2 text-left text-sm">
+                {["Agrega o conecta una cuenta", "Crea tu alias privado", "Configura el reenvio", "Envia una prueba y revisa el movimiento"].map((item, index) => (
+                  <div key={item} className="flex items-center gap-3 rounded-2xl bg-white/55 p-3 dark:bg-white/8"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-500 text-xs font-black text-white">{index + 1}</span><span className="font-semibold">{item}</span></div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="mt-5 flex flex-wrap items-center gap-2">
-            <Button onClick={saveProfile} disabled={loading || !isProfileComplete(profile)}>
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-              Entrar a Wallet
-            </Button>
+            {setupStep > 1 && <Button variant="glass" onClick={() => setSetupStep((step) => Math.max(1, step - 1))}><ArrowLeft className="h-4 w-4" />Atras</Button>}
+            {setupStep < 4 ? (
+              <Button onClick={() => setSetupStep((step) => Math.min(4, step + 1))} disabled={!isSetupStepComplete(profile, setupStep)}>Continuar<ArrowRight className="h-4 w-4" /></Button>
+            ) : (
+              <Button onClick={saveProfile} disabled={loading || !isProfileComplete(profile)}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}Entrar a Wallet</Button>
+            )}
             <Button variant="glass" onClick={() => supabase.auth.signOut()}>
               Salir
             </Button>
@@ -425,4 +476,11 @@ function isProfileComplete(profile: ProfileDraft) {
       Number(profile.weekly_budget) > 0 &&
       Number(profile.monthly_budget) > 0
   );
+}
+
+function isSetupStepComplete(profile: ProfileDraft, step: number) {
+  if (step === 1) return Boolean(profile.name.trim() && profile.country.trim() && profile.currency.trim());
+  if (step === 2) return Boolean(profile.main_bank.trim());
+  if (step === 3) return Number(profile.daily_budget) > 0 && Number(profile.weekly_budget) > 0 && Number(profile.monthly_budget) > 0;
+  return true;
 }
