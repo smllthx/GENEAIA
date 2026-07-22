@@ -1,15 +1,15 @@
 "use client";
 
-import { Bot, ChartPie, Home, Mail, ReceiptText } from "lucide-react";
+import { CalendarDays, ChartPie, Home, Landmark, ReceiptText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const tabs = [
-  { id: "automatizacion", label: "Correo", icon: Mail },
   { id: "inicio", label: "Inicio", icon: Home },
   { id: "movimientos", label: "Movimientos", icon: ReceiptText },
-  { id: "presupuesto", label: "Presupuesto", icon: ChartPie },
-  { id: "ia", label: "IA", icon: Bot }
+  { id: "suscripciones", label: "Suscripciones", icon: CalendarDays },
+  { id: "presupuesto", label: "Presupuestos", icon: ChartPie },
+  { id: "cuentas", label: "Cuentas", icon: Landmark }
 ];
 
 export function FloatingTabBar({ active, onChange, order }: { active: string; onChange: (tab: string) => void; order?: string[] }) {

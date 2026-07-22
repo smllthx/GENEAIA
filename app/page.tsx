@@ -42,6 +42,9 @@ import { formatCurrency } from "@/lib/utils";
 import { TransactionItem } from "@/components/TransactionItem";
 import { AutomationPanel } from "@/components/AutomationPanel";
 import { AdaptiveSettings } from "@/components/AdaptiveSettings";
+import { AccountsView } from "@/components/AccountsView";
+import { BudgetManager } from "@/components/BudgetManager";
+import { SubscriptionsView } from "@/components/SubscriptionsView";
 import { useSyncedPreferences } from "@/hooks/use-synced-preferences";
 import type { Account, BalancePoint, CategoryPoint, HeatmapDay, Transaction } from "@/lib/types";
 
@@ -130,7 +133,7 @@ const emptyInsight = {
 };
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState("automatizacion");
+  const [activeTab, setActiveTab] = useState("inicio");
   const [hidden, setHidden] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [hideSections, setHideSections] = useState(false);
@@ -176,6 +179,7 @@ export default function Home() {
   }, [adaptivePreferences.reduceMotion]);
 
   const activeAccounts = liveAccounts;
+  const visibleAccounts = activeAccounts.filter((account) => !account.is_hidden);
   const activeTransactions = liveTransactions;
   const activeBalance = activeAccounts
     .filter((account) => !account.is_hidden && !account.exclude_from_total)
@@ -200,7 +204,7 @@ export default function Home() {
   const availableToday = Math.max(0, Math.min(activeBalance, monthlyRemaining, dailyAllowance));
   const availableWeek = Math.max(0, Math.min(activeBalance, monthlyRemaining, weeklyAllowance));
   const savedThisMonth = activeAccounts
-    .filter((account) => account.type === "savings")
+    .filter((account) => account.type === "savings" && !account.is_hidden)
     .reduce((sum, account) => sum + account.balance, 0);
   const categoryChart = useMemo(() => buildCategoryData(activeTransactions), [activeTransactions]);
   const balanceChart = useMemo(() => buildBalanceTrend(activeTransactions, activeBalance), [activeTransactions, activeBalance]);
@@ -228,6 +232,12 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-2">
             <span className="hidden sm:block"><InstallPWAButton compact /></span>
+            <Button variant="glass" size="icon" onClick={() => navigate("automatizacion")} aria-label="Automatización por correo y PDF">
+              <Mail className="h-4 w-4" />
+            </Button>
+            <Button variant="glass" size="icon" onClick={() => navigate("ia")} aria-label="Asistente financiero con IA">
+              <Sparkles className="h-4 w-4" />
+            </Button>
             <Button variant="glass" size="icon" onClick={() => setSettingsOpen(true)} aria-label="Personalizar experiencia">
               <SlidersHorizontal className="h-4 w-4" />
             </Button>
@@ -264,10 +274,7 @@ export default function Home() {
           />
         ) : (
           <>
-            <RealBankingPanel
-              showPanel={false}
-              onLiveData={handleLiveData}
-            />
+            {activeTab !== "cuentas" && <RealBankingPanel showPanel={false} onLiveData={handleLiveData} />}
             {activeTab === "inicio" && (
               <Dashboard
                 hidden={hidden}
@@ -275,7 +282,7 @@ export default function Home() {
                 hideSections={hideSections}
                 onToggleSections={() => setHideSections((value) => !value)}
                 monthlyProgress={monthlyProgress}
-                accounts={activeAccounts}
+                accounts={visibleAccounts}
                 transactions={activeTransactions}
                 totalBalance={activeBalance}
                 monthlySpent={activeMonthlySpent}
@@ -299,7 +306,15 @@ export default function Home() {
                 accountsById={accountsById}
               />
             )}
-            {activeTab === "presupuesto" && <Budgets monthlyProgress={monthlyProgress} />}
+            {activeTab === "suscripciones" && <SubscriptionsView accounts={visibleAccounts} transactions={activeTransactions} hidden={hidden} />}
+            {activeTab === "presupuesto" && <Budgets monthlyProgress={monthlyProgress} transactions={activeTransactions} hidden={hidden} />}
+            {activeTab === "cuentas" && (
+              <AccountsView
+                accounts={activeAccounts}
+                hidden={hidden}
+                bankingPanel={<RealBankingPanel showPanel onLiveData={handleLiveData} />}
+              />
+            )}
             {activeTab === "automatizacion" && <AutomationPanel />}
             {activeTab === "ia" && <AISection transactions={activeTransactions} monthlySpent={activeMonthlySpent} totalBalance={activeBalance} categoryChart={categoryChart} heatmap={heatmap} />}
           </>
@@ -592,36 +607,15 @@ function Movements({
   );
 }
 
-function Budgets({ monthlyProgress }: { monthlyProgress: number }) {
+function Budgets({ monthlyProgress, transactions, hidden }: { monthlyProgress: number; transactions: Transaction[]; hidden: boolean }) {
   return (
     <div className="space-y-5">
-      <DebtBudgetPlanner />
-      <div className="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
-        <GlassCard>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-muted-foreground">Presupuestos</p>
-            <h2 className="text-2xl font-black">Control por categoría</h2>
-            </div>
-            <Badge>Configurable por periodo</Badge>
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <EmptyState title="Sin presupuestos por categoría" copy="Usa el formulario superior para crear gastos diarios, semanales, mensuales, anuales o por evento." />
-        </div>
-        </GlassCard>
-        <GlassCard glow>
-        <h2 className="text-2xl font-black">Recomendación IA</h2>
-        <p className="mt-3 text-lg font-semibold">
-          Crea gastos por periodo y registra movimientos para recibir recomendaciones reales.
-        </p>
-        <p className="mt-2 text-sm text-muted-foreground">Wallet no muestra recomendaciones inventadas sin tus datos.</p>
-          <div className="mt-5 rounded-[1.4rem] bg-orange-400/14 p-4">
-            <p className="font-black">Zona de atención</p>
-            <p className="text-sm text-muted-foreground">Si pasas el 80%, activa límite diario automático.</p>
-          </div>
-          <Progress value={monthlyProgress} className="mt-5" />
-        </GlassCard>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div><p className="text-sm font-bold uppercase tracking-[0.16em] text-orange-500">Planifica sin perder el contexto</p><h2 className="text-4xl font-black sm:text-5xl">Presupuestos</h2></div>
+        <Badge>{monthlyProgress}% del límite mensual</Badge>
       </div>
+      <BudgetManager transactions={transactions} hidden={hidden} />
+      <DebtBudgetPlanner />
     </div>
   );
 }
