@@ -1,9 +1,9 @@
 export const tabLabels: Record<string, string> = {
   inicio: "Inicio",
-  automatizacion: "Correo",
   movimientos: "Movimientos",
-  presupuesto: "Presupuesto",
-  ia: "IA"
+  suscripciones: "Suscripciones",
+  presupuesto: "Presupuestos",
+  cuentas: "Cuentas"
 };
 
 export const sectionLabels: Record<string, string> = {
@@ -32,7 +32,7 @@ export const defaultAdaptivePreferences: AdaptivePreferences = {
   density: "comfortable",
   reduceMotion: false,
   highContrast: false,
-  tabOrder: ["inicio", "automatizacion", "movimientos", "presupuesto", "ia"],
+  tabOrder: ["inicio", "movimientos", "suscripciones", "presupuesto", "cuentas"],
   sectionOrder: ["resumen", "presupuesto", "tendencia", "categorias"],
   hiddenSections: []
 };

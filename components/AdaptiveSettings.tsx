@@ -14,9 +14,9 @@ export { defaultAdaptivePreferences } from "@/lib/adaptive-preferences";
 export type { AdaptivePreferences } from "@/lib/adaptive-preferences";
 
 const profileOrders: Record<AdaptivePreferences["profile"], string[]> = {
-  auto: ["inicio", "automatizacion", "movimientos", "presupuesto", "ia"],
-  tea: ["inicio", "movimientos", "presupuesto", "automatizacion", "ia"],
-  tdah: ["inicio", "ia", "movimientos", "presupuesto", "automatizacion"],
+  auto: ["inicio", "movimientos", "suscripciones", "presupuesto", "cuentas"],
+  tea: ["inicio", "movimientos", "presupuesto", "suscripciones", "cuentas"],
+  tdah: ["inicio", "movimientos", "presupuesto", "cuentas", "suscripciones"],
   personal: defaultAdaptivePreferences.tabOrder
 };
 

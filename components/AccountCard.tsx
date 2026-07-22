@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore } from "lucide-react";
 import type { Account } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -44,13 +44,15 @@ export function AccountCard({ account, hidden }: { account: Account; hidden: boo
     window.dispatchEvent(new Event("wallet-data-changed"));
   }
 
-  async function remove() {
+  async function toggleArchive() {
     if (!supabase) return;
-    const confirmed = window.confirm("Esto borrará la cuenta y sus movimientos. ¿Seguro?");
-    if (!confirmed) return;
+    if (!account.is_hidden) {
+      const confirmed = window.confirm("¿Ocultar esta cuenta y excluirla del saldo total? Sus movimientos se conservarán.");
+      if (!confirmed) return;
+    }
 
     setLoading(true);
-    const { error } = await supabase.from("accounts").delete().eq("id", account.id);
+    const { error } = await supabase.from("accounts").update({ is_hidden: !account.is_hidden, exclude_from_total: !account.is_hidden }).eq("id", account.id);
     setLoading(false);
 
     if (error) {
@@ -58,6 +60,7 @@ export function AccountCard({ account, hidden }: { account: Account; hidden: boo
       return;
     }
 
+    setMessage(account.is_hidden ? "Cuenta restaurada." : "Cuenta archivada. Su historial se conservó.");
     window.dispatchEvent(new Event("wallet-data-changed"));
   }
 
@@ -65,7 +68,7 @@ export function AccountCard({ account, hidden }: { account: Account; hidden: boo
     <article className={`rounded-[1.5rem] bg-gradient-to-br ${account.color} p-4 text-white shadow-glass`}>
       <div className="flex items-start justify-between gap-3">
         <div className="text-3xl">{account.icon}</div>
-        <Badge className="border-white/25 bg-white/18 text-white">{account.last_update}</Badge>
+        <Badge className="border-white/25 bg-white/18 text-white">{account.is_hidden ? "Archivada" : account.last_update}</Badge>
       </div>
       <p className="mt-6 text-sm text-white/75">{account.institution}</p>
       <h3 className="text-lg font-black">{account.name}</h3>
@@ -89,8 +92,8 @@ export function AccountCard({ account, hidden }: { account: Account; hidden: boo
         <Button className="border-white/25 bg-white/18 text-white hover:bg-white/25" variant="glass" size="sm" onClick={() => setEditing((value) => !value)}>
           {editing ? "Cerrar edición" : "Editar"}
         </Button>
-        <Button className="border-white/25 bg-white/18 text-white hover:bg-red-500/45" variant="glass" size="icon" onClick={remove} disabled={loading} aria-label="Borrar cuenta">
-          <Trash2 className="h-4 w-4" />
+        <Button className="border-white/25 bg-white/18 text-white hover:bg-orange-500/45" variant="glass" size="icon" onClick={toggleArchive} disabled={loading} aria-label={account.is_hidden ? "Restaurar cuenta" : "Archivar cuenta sin borrar movimientos"}>
+          {account.is_hidden ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
         </Button>
       </div>
       {message && <p className="mt-3 rounded-2xl bg-white/18 p-2 text-xs font-semibold">{message}</p>}
